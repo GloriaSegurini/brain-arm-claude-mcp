@@ -1,0 +1,19 @@
+# runtime state: task queue, context, logs (may contain client data — never commit)
+data/
+logs/
+*.log
+*.pid
+
+# local backups
+*.bak*
+*.bak_*
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# personal config
+.brain-arm-projects.json
+config.local.json
+.env
