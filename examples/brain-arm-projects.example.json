@@ -1,0 +1,5 @@
+{
+  "webshop": "/home/YOUR_USER/code/webshop",
+  "data-platform": "/home/YOUR_USER/code/data-platform",
+  "data-platform:ingestion": "/home/YOUR_USER/code/data-platform-ingestion"
+}

@@ -98,18 +98,22 @@ def clear_context(key: Optional[str] = None) -> str:
 def create_task(
     title: str,
     description: str,
+    project: str,
+    channel: str,
     files: Optional[str] = None,
     priority: Literal["low", "normal", "high"] = "normal",
-    project: str = "default",
-    channel: str = "default",
 ) -> str:
-    """[SOLO modalità implement] Brain invia un task a Claude Code.
-    Includi nella description: cosa fare, logica da applicare, file da modificare.
+    """[SOLO modalità implement] Brain invia un task a un ARM (Claude Code).
+    Includi nella description: cosa fare, logica da applicare, file da modificare, criterio di successo.
+    'project': OBBLIGATORIO, nome del progetto come nella mappa progetti. Es: "webshop", "data-platform".
+    'channel': OBBLIGATORIO, la chat brain corrente in kebab-case (sempre lo stesso per questa chat).
     'files': path separati da virgola (opzionale).
-    'project': nome del progetto (raggruppa più chat). Es: "webshop", "data-platform".
-    'channel': identifica la singola chat/sessione brain dentro il progetto.
-               Ogni arm loop va configurato con project+channel della sua brain chat.
+    Dopo la creazione chiama SUBITO wait_for_task(task_id) e ripetilo finché non è concluso.
     """
+    if "default" in (project, channel) or not project.strip() or not channel.strip():
+        return ("Task NON creato: project e channel devono essere quelli di questa chat, non 'default'. "
+                "Se non li conosci, chiedili all'utente una sola volta e salvali con "
+                "write_context('__brain__', 'project=X channel=Y').")
     mode = load(MODE_FILE, {"mode": "brainstorm"})["mode"]
     if mode != "implement":
         return "I task sono disabilitati in modalità 'brainstorm'. Chiama set_mode('implement') prima."
@@ -128,7 +132,9 @@ def create_task(
             "updated_at":  None,
             "result":      None,
         })
-    return f"Task creato: {task_id} [project={project} channel={channel}]\n→ {title}"
+    return (f"Task creato: {task_id} [project={project} channel={channel}]\n→ {title}\n"
+            f"PROSSIMO PASSO: chiama subito wait_for_task('{task_id}') e richiamalo finché non risponde "
+            f"done/failed/needs_clarification. Non chiedere all'utente di avvisarti.")
 
 
 @server.tool()
@@ -235,27 +241,45 @@ def _get_task_by_id(task_id: str):
     return next((t for t in load(TASKS_FILE, []) if t["id"] == task_id), None)
 
 
+def _minutes_since(iso: Optional[str]) -> int:
+    try:
+        return int((datetime.now() - datetime.fromisoformat(iso)).total_seconds() // 60)
+    except (TypeError, ValueError):
+        return 0
+
+
 @server.tool()
 async def wait_for_task(task_id: str) -> str:
-    """[BRAIN] Attende l'esito di un task ARM. Ritorna 'wait' se non è ancora
-    pronto: in quel caso richiamami subito, senza scrivere nulla all'utente.
-    Altrimenti ritorna '<status> <task_id>'."""
-    try:
-        deadline = _time.time() + 50
-        while _time.time() < deadline:
-            try:
-                t = _get_task_by_id(task_id)
-            except Exception:
-                await asyncio.sleep(3)
-                continue
-            if t is None:
-                return f"unknown {task_id}"
-            if t["status"] in DONE_STATES:
-                return f'{t["status"]} {task_id}'
+    """[BRAIN] Attende l'esito di un task ARM (fino a ~50 s per chiamata).
+    Se risponde 'wait …' richiamalo SUBITO con lo stesso task_id, senza scrivere nulla all'utente
+    e senza chiedergli di avvisarti: l'attesa la gestisce questo strumento.
+    Quando risponde 'done/failed/needs_clarification …' leggi l'esito con get_result(task_id)."""
+    t = None
+    deadline = _time.time() + 50
+    while _time.time() < deadline:
+        try:
+            t = _get_task_by_id(task_id)
+        except Exception:
             await asyncio.sleep(3)
-        return "wait"
-    except Exception as e:
-        return f"error {type(e).__name__}: {e}"
+            continue
+        if t is None:
+            return f"unknown {task_id}: id inesistente, controlla di aver copiato l'id restituito da create_task."
+        if t["status"] in DONE_STATES:
+            return (f'{t["status"]} {task_id} — ora chiama get_result("{task_id}"), '
+                    f"verifica l'esito e riferiscilo all'utente.")
+        await asyncio.sleep(3)
+    again = f"Richiama subito wait_for_task('{task_id}') senza scrivere nulla all'utente."
+    if t is None:
+        return f"wait {task_id}: coda momentaneamente non leggibile. {again}"
+    if t["status"] == "pending":
+        mins = _minutes_since(t.get("created_at"))
+        if mins >= 3:
+            return (f"wait {task_id}: ancora pending da {mins} min, nessun arm l'ha preso. Cause probabili: "
+                    f"project/channel ('{t.get('project')}'/'{t.get('channel')}') senza cartella nella mappa "
+                    f"progetti, oppure watcher fermo. Avvisa l'utente UNA volta con questa diagnosi, poi {again[0].lower()}{again[1:]}")
+        return f"wait {task_id}: pending da {mins} min, l'arm lo sta per prendere. {again}"
+    mins = _minutes_since(t.get("updated_at"))
+    return f"wait {task_id}: in_progress da {mins} min, l'arm ci sta lavorando. {again}"
 
 
 @server.tool()

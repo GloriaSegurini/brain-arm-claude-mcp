@@ -1,0 +1,14 @@
+[Unit]
+Description=brain-arm watcher (launches one Claude Code arm per channel in tmux)
+
+[Service]
+Type=simple
+WorkingDirectory=@BASE@
+ExecStart=@BASE@/.venv/bin/python @BASE@/watcher.py
+Restart=on-failure
+RestartSec=5
+# Restarting the watcher must not kill tmux and the running arms.
+KillMode=process
+
+[Install]
+WantedBy=default.target

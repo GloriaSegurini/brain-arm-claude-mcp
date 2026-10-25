@@ -1,0 +1,377 @@
+# brain-arm
+
+**Think in Claude, execute in Claude Code.**
+brain-arm lets a conversation in **Claude Desktop** (the *brain*) plan the work and delegate it, task by task,
+to **Claude Code** sessions (the *arms*) that run on your machine, in your repositories — automatically,
+in parallel, visibly, and within cost and safety limits.
+
+- You discuss, decide and review with the brain. The brain never runs code.
+- When there is something to do, the brain writes a precise task. A watcher starts an arm for that chat,
+  the arm does the work in the right repository and closes the task with a result.
+- The brain waits for the result on its own, checks it, and reports back to you.
+- Every chat has its own queue (*project + channel*), so several brains and arms work side by side without
+  mixing. You see everything live in a terminal dashboard and in tmux.
+
+![brain-arm status table](docs/status-demo.gif)
+
+*The status table (made-up projects). A task appears as pending, an arm starts (●), works on it (RUN),
+closes it (DONE); a second channel joins; idle arms go quiet (○).*
+
+---
+
+## Contents
+
+- [Reading the status table and the logs](#reading-the-status-table-and-the-logs)
+- [Why brain-arm](#why-brain-arm)
+- [How it compares to built-in features](#how-it-compares-to-built-in-features)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Installation](#installation)
+- [Daily use](#daily-use)
+- [Configuration](#configuration)
+- [Safety and cost controls](#safety-and-cost-controls)
+- [Troubleshooting and maintenance](#troubleshooting-and-maintenance)
+- [Limitations](#limitations)
+- [Repository layout](#repository-layout)
+
+---
+
+## Reading the status table and the logs
+
+The table refreshes every 3 seconds (`watch -n3 python3 status.py`; the watcher also keeps it in tmux window 0).
+
+| Column | Meaning |
+|---|---|
+| `PROJECT` | Project key, as in the projects map (`~/.brain-arm-projects.json`). |
+| `CHANNEL` | The brain chat that owns the queue (one channel per chat). |
+| dot | **●** green: the channel's arm is working right now (its screen changed in the last 30 s). **○** gray: an arm exists but is idle or has been closed. No dot: no arm has ever run for this channel. |
+| `PEND` (yellow) | Tasks waiting for an arm. A pending task with **●** is about to be picked up; pending with **○** for minutes means something is off (see [Troubleshooting](#troubleshooting-and-maintenance)). |
+| `RUN` (cyan) | Tasks an arm has started (`in_progress`). |
+| `DONE` | Tasks closed successfully. |
+| `FAIL` (red) | Tasks closed as failed — by the arm (e.g. a permission was denied) or by a safety rule of the watcher. The reason is in the task result. |
+
+**Logs**
+
+| What | Where | How to read it |
+|---|---|---|
+| An arm, live | `tmux attach -t arms`, then pick the `project:channel` window (`Ctrl+b w`, or `tmux attach -t arms \; choose-tree -w`) | The real Claude Code session: you see every step and can answer a prompt if one appears. Detach with `Ctrl+b d` (arms keep running). |
+| An arm, history | `logs/<project>--<channel>.log` | Raw copy of the arm's screen (contains terminal escape codes). `tail -f` it to follow from another terminal. |
+| The watcher | `data/watcher.log` | One line per event: `[NEW]` task seen, `[ARM]` arm started/closed, `[NOTIFY]` new task passed to a running arm, `[NUDGE]` arm reminded to close a task, `[WAIT-USER]` arm waiting for your confirmation, `[IDLE]`/`[KILL]` arm closed by a limit, `[FAIL]` tasks failed by a safety rule. |
+
+> UI messages, prompts and tool descriptions are currently in Italian; the documentation is in English.
+
+---
+
+## Why brain-arm
+
+The short version: **a single agent session is a poor place to think and a poor place to keep context.**
+brain-arm splits *reasoning* and *execution* into two environments, each used for what it does best, with an
+explicit contract — the task — in between.
+
+### 1. Reasoning quality: the brain's context stays clean
+
+In an agentic session most tokens are tool output: files read, test results, stack traces, diffs. They stay in
+the context, push it toward compaction, and dilute earlier decisions. In brain-arm that output **never enters
+the brain's context**: the brain only sees the task it wrote and the result it gets back. Each arm, in turn,
+starts fresh from a well-written task instead of inheriting a long, noisy history.
+
+Measured on the author's usage (`measure.py`, 61 real arm sessions): the median arm session peaked at
+**~43k tokens** of context (p90 ~136k), while the brain received **~1.4k tokens per task** (spec + result) —
+roughly **30× less** for a typical task. (An arm session may serve several tasks, so the per-task ratio is
+somewhat lower; the order of magnitude holds.)
+
+### 2. Separation of powers: structural, not prompt-based
+
+In a single Claude Code session the planner and the executor are the same agent with the same tools; plan mode
+is a mode it can leave. Here the brain has **no shell and no repository access at all** — only the brain-arm
+tools you configured. Every hand-off is a written task: reviewable, logged, and verified by the brain when the
+result comes back. Arms run under Claude Code's permission system and auto mode; when something is blocked it
+surfaces as a failed task with the reason, instead of being worked around.
+
+### 3. The right model for each role, with separate contexts
+
+The brain can use the strongest model with long-form reasoning; arms default to **Sonnet 5.5, medium effort**.
+Unlike a single-session setup that switches model by phase, each model here has **its own context**, and arms
+for different channels run **in parallel**. In the measured sessions **97% of arm input tokens were cache
+reads**, which are billed at a fraction of normal input tokens.
+
+### 4. Robustness: state on disk, independent lifecycles
+
+The queue is a file, not a process: it survives crashes, restarts and closed windows. Brains live for days,
+arms live for the duration of the work and are closed automatically. A dead arm loses nothing; a failed task
+can be re-sent as is. The watcher starts with the OS session and restarts on failure.
+
+### 5. Fits enterprise constraints
+
+brain-arm is built only from primitives that a locked-down environment usually allows: a local stdio MCP
+server, Claude Code with auto mode and explicit permission rules, files, tmux and systemd. No inbound network
+port, no extra hosted service. It adds cost guards, a full audit trail of delegated work, and explicit,
+narrow exceptions instead of blanket permissions.
+
+**Track record** (author's usage, Aug–Oct 2026): 706 tasks delegated, **639 done (90.5%)**, 17 where the arm
+asked for clarification instead of guessing, 50 failed — of which 23 during the initial build of the tool,
+18 permission/safety blocks surfaced as intended, and only 8 related to the task content.
+
+### When **not** to use it
+
+Quick fixes, exploring an unfamiliar repo, single-file edits: a plain Claude Code session is faster.
+brain-arm pays off when the work is long, spans several steps or repositories, or deserves a planning
+conversation that should not drown in tool output.
+
+---
+
+## How it compares to built-in features
+
+| Feature | What it does | Difference from brain-arm |
+|---|---|---|
+| Claude Code **subagents** | Up to ~20 helpers with isolated context inside one session | The parent is still an executor with every tool; no persistent queue; helpers live and die with the session. Great for a single complex task. |
+| Claude Code **agent teams** (experimental) | A lead and teammates sharing a task list | Closest in spirit; interactive CLI only, one team per session, no resume of in-process teammates. |
+| **`opusplan`** model setting | Opus plans, Sonnet executes | Same context passed between models, sequentially; no parallel workers. |
+| **Cross-session messaging** | Your sessions can message each other | A transport, not an orchestrator: it doesn't launch sessions or route work. |
+| **Background sessions** (`claude --bg`, preview) | Sessions running in the background with an overview | Similar to the tmux arms, without queue or routing. |
+| **Plugins / mods** | Hooks and UI customizations inside a session | A customization layer, not delegation; user hooks may be disabled by managed settings. |
+
+Some of these may replace parts of brain-arm over time (e.g. messaging instead of tmux key injection).
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph WIN["Windows"]
+    B["Brain<br/>Claude Desktop chat"]
+  end
+  subgraph WSL["WSL2 (Linux)"]
+    S["MCP server<br/>server.py (stdio)"]
+    Q[("Task queue<br/>data/tasks.json")]
+    W["Watcher<br/>systemd user service"]
+    T["Status table<br/>status.py"]
+    subgraph TMUX["tmux session 'arms'"]
+      A["Arm<br/>Claude Code, one per channel"]
+    end
+    R["Project repository"]
+  end
+  B -- "MCP tools over stdio" --> S
+  S -- "create / read tasks" --> Q
+  W -- "polls every 5 s" --> Q
+  W -- "starts, notifies, closes" --> A
+  A -- "arm_helper.py get/start/done/fail" --> Q
+  A -- "reads, edits, tests" --> R
+  T -- reads --> Q
+```
+
+The components never talk to each other directly: they meet on the **task queue** (a shared blackboard).
+
+**Who starts what**
+
+```
+Windows
+└─ Claude Desktop ──starts──▶ wsl …/.venv/bin/python server.py     (MCP server, stdio)
+WSL2
+├─ systemd --user ──starts──▶ watcher.py                            (one watcher)
+│     └─ tmux session "arms"
+│           ├─ window "status": watch → status.py
+│           └─ one window per channel ──▶ claude (Claude Code)      (N arms)
+│                                              └─ python3 arm_helper.py …
+└─ everyone reads/writes data/*.json through store.py (inter-process lock + atomic writes)
+```
+
+**Life of a task**
+
+```mermaid
+sequenceDiagram
+  participant U as You
+  participant B as Brain (Claude Desktop)
+  participant S as MCP server
+  participant Q as tasks.json
+  participant W as Watcher
+  participant A as Arm (Claude Code)
+  U->>B: discuss, decide
+  B->>S: create_task(project, channel, …)
+  S->>Q: append task (pending)
+  loop every ≤50 s until closed
+    B->>S: wait_for_task(id)
+    S-->>B: "wait … call again" / final status
+  end
+  W->>Q: sees pending task for channel
+  W->>A: open tmux window, start Claude Code (or notify the running arm)
+  A->>Q: arm_helper get / start (in_progress)
+  A->>A: work in the repository (auto mode)
+  A->>Q: arm_helper done/fail + result
+  S-->>B: done
+  B->>S: get_result(id)
+  B->>U: verified outcome
+```
+
+**Brain tools** (MCP): `set_mode`, `get_mode`, `create_task` (project and channel are mandatory),
+`wait_for_task`, `get_result`, `check_updates`, `list_channels`, `get_tasks`, `update_task`,
+`write_context` / `read_context` / `clear_context`, `log` / `get_log`.
+
+**Why arms don't use MCP:** in managed environments the CLI may not load user MCP servers. Arms use
+`arm_helper.py`, a tiny command (`get`, `start`, `done`, `fail`, `write_context`) that works with any Claude
+Code installation. Long results are piped through stdin (`… | arm_helper.py done ID -`).
+
+---
+
+## Tech stack
+
+| Layer | Technology | Why |
+|---|---|---|
+| Brain | Claude Desktop (Windows) | Long conversations, project knowledge, document upload, organization connectors. |
+| Protocol | **MCP** over **stdio** — official Python SDK `mcp` ≥ 2.1 (`MCPServer`) | Standard way to give tools to Claude apps; stdio means Desktop launches the server as a child process — no network port. |
+| Server | `server.py` (Python 3.10+) | Exposes the brain tools; every write goes through `store.py`. |
+| Shared state | JSON files in `data/` + `store.py` (`fcntl` lock, atomic replace) | Inspectable, no database to install, survives restarts; the lock prevents lost updates between concurrent writers (see `tests/test_store_concurrency.py`). |
+| Orchestration | `watcher.py` (Python standard library only) | Launches, notifies, nudges and closes arms; enforces limits. |
+| Arms | Claude Code CLI (recent version), interactive, `--permission-mode auto` | Real repository access with Claude Code's permission system and auto-mode classifier. |
+| Process host | **tmux** | Keeps interactive sessions alive without an open terminal; attach to watch; `pipe-pane` writes the logs. |
+| Service | **systemd** user service in **WSL2** | Starts the watcher with WSL, restarts it on failure; `KillMode=process` keeps arms alive across watcher restarts. |
+
+---
+
+## Installation
+
+**Prerequisites:** Windows with **WSL2** (Ubuntu) and **systemd enabled** (`/etc/wsl.conf` → `[boot] systemd=true`),
+**Claude Desktop**, **Claude Code** in WSL (a recent version — auto mode needs it), `python3` ≥ 3.10 with `venv`,
+`tmux`, `git`.
+
+1. **Clone and install** (inside WSL):
+   ```bash
+   git clone https://github.com/GloriaSegurini/brain-arm-claude-mcp.git ~/brain-arm-mcp
+   cd ~/brain-arm-mcp
+   ./install.sh
+   ```
+   The installer checks prerequisites, creates `.venv`, installs `requirements.txt`, creates
+   `~/.brain-arm-projects.json` from the example (never overwrites yours), installs and starts the watcher
+   service, and prints the exact Claude Desktop entry for your paths.
+
+2. **Map your projects** in `~/.brain-arm-projects.json` — project key → repository folder. A
+   `"project:channel"` key overrides the folder for a single chat:
+   ```json
+   { "webshop": "/home/me/code/webshop", "data-platform:ingestion": "/home/me/code/ingestion" }
+   ```
+
+3. **Trust each project folder once**: run `claude` in it and accept the folder-trust prompt
+   (otherwise an arm would stop on that prompt; the watcher closes it after 10 minutes).
+
+4. **Connect Claude Desktop**: add the entry printed by the installer under `mcpServers` in
+   `%APPDATA%\Claude\claude_desktop_config.json` (see `examples/claude_desktop_config.example.json`),
+   then **quit Claude Desktop from the tray** and reopen it. Use the `command: "wsl"` form — a `url`
+   entry may be rejected by Desktop.
+
+5. **Instruct your brains**: paste [`docs/brain-instructions.md`](docs/brain-instructions.md) into the
+   instructions of your Claude Desktop project, with that chat's project and channel.
+
+6. *(Optional)* **Auto-mode rule for DEV/TEST environments**: `python3 automode_devtest.py` shows, and
+   `--apply` adds, a narrow exception that lets arms read and write DEV/TEST environments using credentials
+   from the project's `.env`. Production, secret printing, bulk deletes and permission changes stay protected.
+   It *adds* to the default rules (writing an `autoMode` section replaces that section's defaults, so the
+   script always starts from `claude auto-mode defaults`) and makes a backup of your settings.
+
+7. **Check end to end**: map a test channel to a trusted folder (e.g. `"brain-arm:selftest": "/home/me/code/sandbox"`)
+   and run `.venv/bin/python tests/e2e_brain_wait.py brain-arm selftest` (add `--slow` to exercise the
+   wait-and-retry path). It talks to the server exactly like Claude Desktop and waits for a real arm.
+
+---
+
+## Daily use
+
+- **New brain chat**: give it the instructions from `docs/brain-instructions.md` with its project and
+  channel; it calls `set_mode("implement")` and saves its identity at the start of each session.
+- **Watch**: `watch -n3 python3 ~/brain-arm-mcp/status.py`; live arms with `tmux attach -t arms`.
+- **Stop**:
+
+  | Command | Effect |
+  |---|---|
+  | `./stop-arms.sh` | Stop everything: watcher, arms, pending tasks marked failed, tmux closed. |
+  | `./stop-arms.sh --pending` | Kill running arms and fail pending tasks; watcher and tmux stay up. |
+  | `./stop-arms.sh <project> <channel>` | Stop one channel's arm and fail its pending tasks. |
+
+- **Verify nothing is running**: `pgrep -af "ARM del progetto"` (no output) and 0 pending / 0 in_progress
+  in the table.
+- **Measure**: `python3 measure.py` — arm tokens vs. what reached the brain, cache share, task outcomes.
+
+---
+
+## Configuration
+
+Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored, see
+`examples/config.local.example.json`).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `arm_model` / `arm_effort` / `arm_permission_mode` | `claude-sonnet-5-5` / `medium` / `auto` | How arms are started. |
+| `max_concurrent` | 5 | Maximum arms at the same time. |
+| `idle_exit_sec` | 3600 | Close an arm after this long without tasks. |
+| `max_runtime_sec` | 3600 | Close an arm after this long working without a pause (its tasks fail). |
+| `startup_timeout_sec` | 600 | Close an arm that hasn't picked up a task in this time (e.g. stuck on a prompt). |
+| `fast_exit_sec` / `max_failures` / `failure_reset_sec` | 30 / 3 / 300 | 3 arms exiting within 30 s in a row → the channel's pending tasks fail and it pauses 5 min. |
+| `stuck_nudge_sec` / `stuck_renudge_sec` / `stuck_max_nudges` | 180 / 900 / 3 | Remind an arm that left a task in progress while idle. |
+| `poll_seconds`, `tmux_session`, `projects_file` | 5, `arms`, `~/.brain-arm-projects.json` | Watcher loop, tmux session name, projects map. |
+
+---
+
+## Safety and cost controls
+
+- **An idle arm costs nothing**: it sits at its prompt; tokens are spent only while it works. The watcher and
+  the table are plain scripts that read a file.
+- **Watcher limits** (see [Configuration](#configuration)): max concurrent arms, idle close, max continuous
+  runtime, startup timeout, crash-loop pause.
+- **No unmapped work**: tasks for a project without a folder, or with project/channel `default`, fail
+  immediately with an explanation instead of starting an arm in your home directory.
+- **Never types into a dialog**: before sending anything to an arm (new-task notice, reminder) the watcher
+  checks the screen; if a confirmation dialog is open it waits and logs `[WAIT-USER]`, so it can never pick
+  an option for you.
+- **Forgotten tasks**: if a task stays in progress while the arm's screen is idle, the watcher reminds it (up
+  to 3 times); the runtime limit remains the backstop.
+- **Brain waiting**: `wait_for_task` blocks server-side up to ~50 s per call (no tokens while waiting) and every
+  answer tells the brain the next step; if no arm picks the task up within 3 minutes it returns a diagnosis.
+- **Auto mode stays on**: only the explicit, narrow DEV/TEST rule is added. Attempts to route around a block are
+  themselves blocked by the classifier — by design.
+- **Kill switch**: `./stop-arms.sh`.
+- **Publishing hygiene** (for forks): `.gitignore` excludes `data/`, `logs/`, local config and `.env`.
+
+---
+
+## Troubleshooting and maintenance
+
+| Symptom | Cause and fix |
+|---|---|
+| Arms keep asking for approvals | Auto mode is unavailable in old Claude Code versions (`auto mode unavailable` at startup). Update: `sudo npm i -g @anthropic-ai/claude-code@latest`. If Claude Code is installed in a root-owned prefix its self-update can't write there — update it periodically by hand. |
+| A task stays `pending` with ○ | Project/channel not in the projects map, watcher stopped (`systemctl --user status brain-arm-watcher`), or the arm is stuck on the folder-trust prompt (trust the folder once). `wait_for_task` reports this after 3 minutes. |
+| Claude Desktop: "not a valid MCP server configuration" | Use the `command: "wsl"` form, not `url`. Quit Desktop from the tray after editing the config. |
+| `create_task` refused | project/channel missing or `default`: set the chat identity (see `docs/brain-instructions.md`). |
+| Task blocked by the auto-mode classifier | Working as intended. Run the step yourself, or add a narrow rule (see `automode_devtest.py`). Don't route around it. |
+| `claude` hangs at startup in WSL with managed settings | Managed settings that force a remote refresh may be unreachable from WSL; check with your administrator. |
+| Restarting the watcher | `systemctl --user restart brain-arm-watcher` — running arms are kept and re-adopted. |
+
+---
+
+## Limitations
+
+- The brain can't see the code directly: it relies on recon tasks and on what arms report.
+- Delegation adds latency; for small changes a direct Claude Code session is faster.
+- Built and tested on Windows + WSL2 + Ubuntu; plain Linux/macOS should need little change but are untested.
+- The brain spends a little while waiting (one short step every ~50 s while a task runs).
+- Prompts and messages are in Italian for now.
+
+---
+
+## Repository layout
+
+```
+server.py            MCP server for the brain (stdio)
+watcher.py           launches/notifies/nudges/closes arms in tmux; enforces limits
+arm_helper.py        the arms' interface to the queue
+store.py             inter-process lock + atomic JSON writes
+config.py            defaults; overrides in config.local.json
+status.py            status table
+stop-arms.sh         stop everything / one channel / pending only
+install.sh           installer (venv, systemd service, Desktop snippet)
+automode_devtest.py  optional auto-mode rule for DEV/TEST environments
+measure.py           usage and outcome metrics
+systemd/             watcher service template
+examples/            projects map, local config, Claude Desktop config
+docs/                brain instructions, status GIF and its generator
+tests/               concurrency test, end-to-end brain/arm test
+```

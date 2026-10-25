@@ -1,0 +1,6 @@
+{
+  "arm_model": "claude-sonnet-5-5",
+  "arm_effort": "medium",
+  "max_concurrent": 3,
+  "idle_exit_sec": 1800
+}

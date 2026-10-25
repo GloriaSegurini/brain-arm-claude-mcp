@@ -25,6 +25,9 @@ DEFAULTS = {
     "startup_timeout_sec": 600,
     "max_runtime_sec": 3600,
     "idle_exit_sec": 3600,
+    "stuck_nudge_sec": 180,
+    "stuck_renudge_sec": 900,
+    "stuck_max_nudges": 3,
 }
 
 

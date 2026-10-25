@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "brain-arm": {
+      "command": "wsl",
+      "args": [
+        "/home/YOUR_USER/brain-arm-mcp/.venv/bin/python",
+        "/home/YOUR_USER/brain-arm-mcp/server.py"
+      ]
+    }
+  }
+}

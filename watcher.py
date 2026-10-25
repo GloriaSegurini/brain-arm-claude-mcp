@@ -41,6 +41,9 @@ MAX_RUNTIME_SEC     = CONFIG["max_runtime_sec"]
 STARTUP_TIMEOUT_SEC = CONFIG["startup_timeout_sec"]
 IDLE_EXIT_SEC       = CONFIG["idle_exit_sec"]
 MAX_CONCURRENT      = CONFIG["max_concurrent"]
+STUCK_NUDGE_SEC     = CONFIG["stuck_nudge_sec"]
+STUCK_RENUDGE_SEC   = CONFIG["stuck_renudge_sec"]
+STUCK_MAX_NUDGES    = CONFIG["stuck_max_nudges"]
 
 DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
@@ -158,7 +161,8 @@ def arm_prompt(project: str, channel: str, work_dir: str) -> str:
         f'Per ogni task: get → start → esegui → done (o fail). Chiudi SEMPRE ogni task con done o fail.\n'
         f'Non fare domande e non chiedere preferenze: se hai un dubbio scegli l\'opzione più sicura.\n'
         f'Se un comando viene negato: fail TASK_ID "PERMESSO NEGATO: <comando> — richiede autorizzazione esplicita".\n'
-        f'Quando non ci sono più task pending scrivi "ARM in attesa" e fermati.\n'
+        f'L\'ultimo comando di ogni task è SEMPRE done o fail: un task lasciato in_progress blocca la brain.\n'
+        f'Scrivi "ARM in attesa" e fermati solo quando non ci sono più task pending E hai chiuso tutti quelli avviati.\n'
         f'Se ricevi il messaggio "nuovi task", ricomincia da get.'
     )
 
@@ -227,15 +231,66 @@ def launch_arm(project: str, channel: str, pending_ids: list):
     log(f"[ARM] avviato {project}:{channel} finestra={win} model={ARM_MODEL} perm={ARM_PERM}")
 
 
+DIALOG_MARKERS = ("Do you want", "Esc to cancel", "Enter to confirm", "trust this folder", "❯ 1.")
+
+
+def dialog_open(win: str) -> bool:
+    """True if the arm shows a question/permission dialog: typing into it could pick an option."""
+    try:
+        screen = subprocess.run(["tmux", "capture-pane", "-p", "-t", win],
+                                capture_output=True, text=True, timeout=5).stdout
+    except subprocess.TimeoutExpired:
+        return True
+    return any(m in screen for m in DIALOG_MARKERS)
+
+
+def send_to_arm(key: tuple, text: str) -> bool:
+    v = running[key]
+    if dialog_open(v["win"]):
+        if not v.get("dialog_logged"):
+            log(f"[WAIT-USER] {key[0]}:{key[1]} aspetta una tua conferma nella finestra tmux")
+            v["dialog_logged"] = True
+        return False
+    v["dialog_logged"] = False
+    tmux("send-keys", "-t", v["win"], "-l", text)
+    tmux("send-keys", "-t", v["win"], "Enter")
+    return True
+
+
 def notify_new_tasks(key: tuple, pending_ids: list):
     v = running[key]
     nuovi = [i for i in pending_ids if i not in v["notified"]]
     if not nuovi:
         return
-    tmux("send-keys", "-t", v["win"], "-l", f"nuovi task ({len(nuovi)}): ricomincia da get")
-    tmux("send-keys", "-t", v["win"], "Enter")
-    v["notified"].update(nuovi)
-    log(f"[NOTIFY] {key[0]}:{key[1]} — {len(nuovi)} nuovi task segnalati all'arm")
+    if send_to_arm(key, f"nuovi task ({len(nuovi)}): ricomincia da get"):
+        v["notified"].update(nuovi)
+        log(f"[NOTIFY] {key[0]}:{key[1]} — {len(nuovi)} nuovi task segnalati all'arm")
+
+
+def nudge_stuck(counts: dict):
+    """Task in_progress but the arm's screen hasn't changed for a while: it probably forgot done/fail."""
+    now = time.time()
+    for key, v in list(running.items()):
+        c = counts.get(key)
+        if not c or not c["in_progress"]:
+            v["nudges"] = 0
+            continue
+        try:
+            quiet = now - (LOGS_DIR / f"{key[0]}--{key[1]}.log").stat().st_mtime
+        except FileNotFoundError:
+            continue
+        nudges = v.get("nudges", 0)
+        if (quiet < STUCK_NUDGE_SEC or nudges >= STUCK_MAX_NUDGES
+                or (nudges and now - v.get("last_nudge", 0) < STUCK_RENUDGE_SEC)):
+            continue
+        ids = ", ".join(c["in_progress"])
+        msg = (f"Promemoria del watcher: {ids} risulta ancora in_progress ma la sessione e' ferma. "
+               f"Se il lavoro e' finito chiudilo ORA con arm_helper.py done (o fail) e il risultato. "
+               f"Se stai aspettando un processo in background rispondi solo: in attesa")
+        if send_to_arm(key, msg):
+            v["nudges"] = nudges + 1
+            v["last_nudge"] = now
+            log(f"[NUDGE] {key[0]}:{key[1]} promemoria {v['nudges']}/{STUCK_MAX_NUDGES} per {ids}")
 
 
 def cleanup_finished():
@@ -302,6 +357,7 @@ while True:
         kill_stale(counts)
         counts = channel_counts()
         close_idle(counts)
+        nudge_stuck(counts)
         for key, c in counts.items():
             if not c["pending"]:
                 continue
