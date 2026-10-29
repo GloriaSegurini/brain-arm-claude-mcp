@@ -10,6 +10,8 @@ from PIL import Image
 from gifkit import SCALE, Draw, Font, new_image, save_gif
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys  # noqa: E402
+sys.path.insert(1, str(ROOT))  # for status.py (the real table renderer)
 SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
@@ -101,12 +103,44 @@ def chat(items, phase):
     return img
 
 
+def with_status(base):
+    """Dim the chat and show the optional status-table view (rendered by the real status.py)."""
+    import re
+    from make_status_gif import ANSI, scene
+    from status import render
+    view = render(scene((0, 1, 12, 0), (0, 0, 7, 1)),
+                  {("webshop", "checkout-redesign"): True, ("data-platform", "ingestion"): False}, "10:14:12")
+    img = Image.blend(base, Image.new("RGB", base.size, (0, 0, 0)), 0.55)
+    d = Draw(img)
+    lines = view.split("\n")
+    x0, y0, x1, y1 = 40, 72, W - 40, H - 72
+    d.rounded_rectangle([x0, y0, x1, y1], 12, fill=TERM, outline=(110, 60, 95), width=1.5)
+    d.text((x0 + 18, y0 + 14), "watch -n3 python3 status.py", font=f_bold, fill=TERM_FG)
+    d.text((x0 + 18 + f_bold.getlength("watch -n3 python3 status.py") + 10, y0 + 15), "— the table view",
+           font=f_small, fill=TERM_DIM)
+    y = y0 + 48
+    for line in lines:
+        x, color = x0 + 6, TERM_FG
+        for part in re.split(r"(\x1b\[[0-9;]*m)", line):
+            m = re.fullmatch(r"\x1b\[([0-9;]*)m", part)
+            if m:
+                code = m.group(1) or "0"
+                color = TERM_FG if code in ("0", "1") else ANSI.get(code, TERM_FG)
+            elif part:
+                d.text((x, y), part, font=f_mono, fill=color)
+                x += f_mono.getlength(part)
+        y += 21
+    d.rounded_rectangle([40, H - 56, W - 40, H - 16], 10, fill=(28, 28, 26))
+    d.text((W / 2, H - 37), "Want to know where things stand? Open the table view.",
+           font=f_cap, fill=FG, anchor="mm")
+    return img
+
+
 def with_noise(base):
     """Dim the chat and show where the noise lives: the arm's tmux window."""
     img = Image.blend(base, Image.new("RGB", base.size, (0, 0, 0)), 0.55)
     d = Draw(img)
-    x0, y0, x1 = 150, 130, W - 30
-    y1 = y0 + 48 + 21 * len(NOISE) + 14
+    x0, y0, x1, y1 = 40, 72, W - 40, H - 72
     d.rounded_rectangle([x0, y0, x1, y1], 12, fill=TERM, outline=(110, 60, 95), width=1.5)
     d.text((x0 + 18, y0 + 14), "tmux attach -t arms", font=f_bold, fill=TERM_FG)
     d.text((x0 + 18 + f_bold.getlength("tmux attach -t arms") + 10, y0 + 15), "— only if you want to look",
@@ -116,7 +150,7 @@ def with_noise(base):
         d.text((x0 + 18, y), text, font=f_mono, fill=color)
         y += 21
     d.rounded_rectangle([40, H - 56, W - 40, H - 16], 10, fill=(28, 28, 26))
-    d.text((W / 2, H - 37), "The noise stays in the arm's session — your chat stays clean.",
+    d.text((W / 2, H - 37), "Want every detail? The arm's live session. Your chat stays clean.",
            font=f_cap, fill=FG, anchor="mm")
     return img
 
@@ -145,8 +179,8 @@ def main():
             images.append(chat(items, 0))
             durations.append(ms)
     clean = chat(items, 0)
-    images += [with_noise(clean), clean]
-    durations += [4200, 1800]
+    images += [with_status(clean), with_noise(clean), clean]
+    durations += [3800, 4200, 1800]
     out = ROOT / "docs" / "brain-wait-demo.gif"
     save_gif(images, durations, out)
     print(f"written {out} ({len(images)} frames, {W * SCALE}x{H * SCALE})")

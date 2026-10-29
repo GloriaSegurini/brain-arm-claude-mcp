@@ -68,8 +68,9 @@ The table refreshes every 3 seconds (`watch -n3 python3 status.py`; the watcher 
 <img src="docs/brain-wait-demo.gif" width="880" alt="What you see in the brain chat while an arm works">
 
 *What you actually see in the brain chat: your request, a few compact tool lines while the brain waits on its own,
-and a verified answer. The arm's noise — files read, diffs, test logs — stays in its own session, one
-`tmux attach -t arms` away if you want to look. Made-up example.*
+and a verified answer. Everything else is there only when you ask for it: the **table view** to see where tasks
+stand (`watch -n3 python3 status.py`), or the arm's **live session** with every file read, diff and test log
+(`tmux attach -t arms`). Made-up example.*
 
 **You don't have to tell the brain to wait, or tell it when the arm is done.** The waiting is built into the
 tools:
@@ -332,6 +333,8 @@ written for people who have never used a terminal (about 20 minutes).
 - **New brain chat**: give it the instructions from `docs/brain-instructions.md` with its project and
   channel; it calls `set_mode("implement")` and saves its identity at the start of each session.
 - **Watch**: `watch -n3 python3 ~/brain-arm/status.py`; live arms with `tmux attach -t arms`.
+- **An arm's history**: `tail -f ~/brain-arm/logs/<project>--<channel>.log` (how to read table and logs:
+  [Reading the status table and the logs](#reading-the-status-table-and-the-logs)).
 - **Add a project**: `./add-project.sh <project>[:<channel>] <folder>`; list them with `./add-project.sh --list`.
 - **Stop**:
 
