@@ -23,6 +23,7 @@ closes it (DONE); a second channel joins; idle arms go quiet (○).*
 
 - [Reading the status table and the logs](#reading-the-status-table-and-the-logs)
 - [How the brain waits for the arm](#how-the-brain-waits-for-the-arm)
+- [Cost model](#cost-model)
 - [Why brain-arm](#why-brain-arm)
 - [How it compares to built-in features](#how-it-compares-to-built-in-features)
 - [Architecture](#architecture)
@@ -84,6 +85,46 @@ The rules live in the tool descriptions and answers themselves, so they work in 
 brain-arm connector. For extra robustness put [`docs/brain-instructions.md`](docs/brain-instructions.md) in your
 Claude Desktop project instructions once: it also fixes the chat's project and channel, so you never have to
 repeat them.
+
+---
+
+## Cost model
+
+**Tokens are spent only while a model is generating** — the brain while it answers, an arm while it works.
+Everything that waits or polls is plain code reading a file.
+
+| What happens | Who does it | Tokens |
+|---|---|---|
+| Checking the queue every 5 s | watcher (Python) | **0** |
+| Refreshing the status table every 3 s | `status.py` (Python) | **0** |
+| Waiting inside `wait_for_task` (up to `wait_window_sec`, 50 s by default) | MCP server (Python) | **0** |
+| An arm sitting idle at its prompt ("ARM waiting") | nobody — it just waits for input | **0** |
+| Re-calling `wait_for_task` after each *"wait"* answer | brain: one model step every ~50 s | **small** |
+| Waking an idle arm for a new task (the watcher types "new tasks") | arm: one turn, then the work | small + work |
+| Starting a new arm (prompt, project context) | arm: once per arm session | one-off |
+| Reminding an arm that forgot to close a task (max 3) | arm: one short turn each | small, rare |
+| **Doing the actual work** — reading, editing, testing | arm | **the real cost** |
+| Planning, writing the task, checking the result | brain | normal chat cost |
+
+**Arms don't poll.** An arm never checks the queue by itself: it is woken up by the watcher only when there is
+something to do, and between tasks it costs nothing.
+
+**What one brain "wait" step costs.** When `wait_for_task` answers *"wait"*, the brain makes one model call to
+call it again. That call re-reads the conversation — almost all of it from the prompt cache, which is billed at a
+fraction of normal input — and writes a few dozen tokens; each *"wait"* answer also adds ~60 tokens to the chat.
+Example: a 10-minute task costs the brain about **12 short steps**, each comparable to a one-line message in a
+long chat. The step cost grows with the length of the brain chat, so long-running brains benefit from starting a
+fresh chat per topic.
+
+**For scale** (`measure.py`, author's usage): a typical arm work session peaks at ~43k tokens of context with
+96–97% of input read from cache, while the brain sees ~1.4k tokens per task. The brain's waiting is small next
+to the arm's work, and the arm's work is what you would pay for in any single-session setup too.
+
+**Tuning.** A longer `wait_window_sec` means fewer brain steps (300 s → 5× fewer), but a tool call that lasts
+too long may be cut off by the MCP client's own timeout. 50 s is a conservative default; raise it in
+`config.local.json` only after checking that your client tolerates it.
+
+Whether you pay per token (API) or work within plan usage limits, the same proportions apply.
 
 ---
 
@@ -298,46 +339,36 @@ Code installation. Long results are piped through stdin (`… | arm_helper.py do
 
 ## Installation
 
-**Prerequisites:** Windows with **WSL2** (Ubuntu) and **systemd enabled** (`/etc/wsl.conf` → `[boot] systemd=true`),
-**Claude Desktop**, **Claude Code** in WSL (a recent version — auto mode needs it), `python3` ≥ 3.10 with `venv`,
-`tmux`, `git`.
+> **Step-by-step guide — copy-paste commands and a check after every step: [INSTALL.md](INSTALL.md)** (≈ 20 minutes).
 
-1. **Clone and install** (inside WSL):
+| | Windows 10/11 | macOS | Linux |
+|---|---|---|---|
+| Where brain-arm runs | inside **WSL2** (Ubuntu) | natively | natively |
+| Starts automatically with | systemd | launchd | systemd |
+| Brain (Claude Desktop) | ✅ Windows app | ✅ Mac app | ❌ no official app — watcher and arms work, the brain needs another MCP client |
+
+**In short** (details and checks for every step in INSTALL.md):
+
+1. Install the prerequisites — `python3` ≥ 3.10 with `venv`, `tmux`, `git`, `watch`, **Claude Code** (recent
+   version: auto mode needs it) and **Claude Desktop**. On Windows, first install WSL2 and enable systemd.
+2. Get the code and install:
    ```bash
-   git clone https://github.com/GloriaSegurini/brain-arm-claude-mcp.git ~/brain-arm-mcp
-   cd ~/brain-arm-mcp
-   ./install.sh
+   git clone https://github.com/GloriaSegurini/brain-arm-claude-mcp.git ~/brain-arm
+   cd ~/brain-arm
+   ./install.sh --check      # tells you exactly what is missing and how to install it; changes nothing
+   ./install.sh              # venv, watcher service, and (if you answer y) the Claude Desktop entry
    ```
-   The installer checks prerequisites, creates `.venv`, installs `requirements.txt`, creates
-   `~/.brain-arm-projects.json` from the example (never overwrites yours), installs and starts the watcher
-   service, and prints the exact Claude Desktop entry for your paths.
-
-2. **Map your projects** in `~/.brain-arm-projects.json` — project key → repository folder. A
-   `"project:channel"` key overrides the folder for a single chat:
-   ```json
-   { "webshop": "/home/me/code/webshop", "data-platform:ingestion": "/home/me/code/ingestion" }
+3. Quit Claude Desktop completely and reopen it.
+4. Map your projects and trust their folders once:
+   ```bash
+   ./add-project.sh webshop ~/code/webshop
+   cd ~/code/webshop && claude      # accept the trust question, then /exit
    ```
-
-3. **Trust each project folder once**: run `claude` in it and accept the folder-trust prompt
-   (otherwise an arm would stop on that prompt; the watcher closes it after 10 minutes).
-
-4. **Connect Claude Desktop**: add the entry printed by the installer under `mcpServers` in
-   `%APPDATA%\Claude\claude_desktop_config.json` (see `examples/claude_desktop_config.example.json`),
-   then **quit Claude Desktop from the tray** and reopen it. Use the `command: "wsl"` form — a `url`
-   entry may be rejected by Desktop.
-
-5. **Instruct your brains**: paste [`docs/brain-instructions.md`](docs/brain-instructions.md) into the
-   instructions of your Claude Desktop project, with that chat's project and channel.
-
-6. *(Optional)* **Auto-mode rule for DEV/TEST environments**: `python3 automode_devtest.py` shows, and
-   `--apply` adds, a narrow exception that lets arms read and write DEV/TEST environments using credentials
-   from the project's `.env`. Production, secret printing, bulk deletes and permission changes stay protected.
-   It *adds* to the default rules (writing an `autoMode` section replaces that section's defaults, so the
-   script always starts from `claude auto-mode defaults`) and makes a backup of your settings.
-
-7. **Check end to end**: map a test channel to a trusted folder (e.g. `"brain-arm:selftest": "/home/me/code/sandbox"`)
-   and run `.venv/bin/python tests/e2e_brain_wait.py brain-arm selftest` (add `--slow` to exercise the
-   wait-and-retry path). It talks to the server exactly like Claude Desktop and waits for a real arm.
+5. Paste [`docs/brain-instructions.md`](docs/brain-instructions.md) into your Claude Desktop project instructions.
+6. *(Optional)* `python3 automode_devtest.py --apply` — a narrow auto-mode exception for DEV/TEST environments
+   (production, secret printing, bulk deletes and permission changes stay protected; it adds to the default
+   rules and backs up your settings).
+7. Run the end-to-end test described in INSTALL.md → *Verify everything*.
 
 ---
 
@@ -345,7 +376,8 @@ Code installation. Long results are piped through stdin (`… | arm_helper.py do
 
 - **New brain chat**: give it the instructions from `docs/brain-instructions.md` with its project and
   channel; it calls `set_mode("implement")` and saves its identity at the start of each session.
-- **Watch**: `watch -n3 python3 ~/brain-arm-mcp/status.py`; live arms with `tmux attach -t arms`.
+- **Watch**: `watch -n3 python3 ~/brain-arm/status.py`; live arms with `tmux attach -t arms`.
+- **Add a project**: `./add-project.sh <project>[:<channel>] <folder>`; list them with `./add-project.sh --list`.
 - **Stop**:
 
   | Command | Effect |
@@ -374,6 +406,7 @@ Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored,
 | `startup_timeout_sec` | 600 | Close an arm that hasn't picked up a task in this time (e.g. stuck on a prompt). |
 | `fast_exit_sec` / `max_failures` / `failure_reset_sec` | 30 / 3 / 300 | 3 arms exiting within 30 s in a row → the channel's pending tasks fail and it pauses 5 min. |
 | `stuck_nudge_sec` / `stuck_renudge_sec` / `stuck_max_nudges` | 180 / 900 / 3 | Remind an arm that left a task in progress while idle. |
+| `wait_window_sec` | 50 | How long one `wait_for_task` call waits before answering "wait" (see [Cost model](#cost-model)). |
 | `poll_seconds`, `tmux_session`, `projects_file` | 5, `arms`, `~/.brain-arm-projects.json` | Watcher loop, tmux session name, projects map. |
 
 ---
@@ -433,7 +466,10 @@ store.py             inter-process lock + atomic JSON writes
 config.py            defaults; overrides in config.local.json
 status.py            status table
 stop-arms.sh         stop everything / one channel / pending only
-install.sh           installer (venv, systemd service, Desktop snippet)
+install.sh           installer for Windows+WSL2, macOS, Linux (--check to only verify)
+add-project.sh       map a project (or project:channel) to its folder
+INSTALL.md           step-by-step installation guide
+launchd/             watcher LaunchAgent template (macOS)
 automode_devtest.py  optional auto-mode rule for DEV/TEST environments
 measure.py           usage and outcome metrics
 systemd/             watcher service template

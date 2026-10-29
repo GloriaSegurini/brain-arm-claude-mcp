@@ -28,6 +28,7 @@ DEFAULTS = {
     "stuck_nudge_sec": 180,
     "stuck_renudge_sec": 900,
     "stuck_max_nudges": 3,
+    "wait_window_sec": 50,
 }
 
 

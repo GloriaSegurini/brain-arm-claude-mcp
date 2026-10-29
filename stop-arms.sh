@@ -9,6 +9,14 @@ SESSION="$(cd "$BASE" && python3 -c 'from config import CONFIG; print(CONFIG["tm
 # Arm processes are recognised by the first words of their prompt (current and legacy wording).
 ARM_PATTERN='ARM (for project|del progetto)'
 
+if [ "$(uname -s)" = Darwin ]; then
+    stop_watcher()  { launchctl bootout "gui/$(id -u)/com.brain-arm.watcher" 2>/dev/null; }
+    START_HINT="launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.brain-arm.watcher.plist"
+else
+    stop_watcher()  { systemctl --user stop brain-arm-watcher.service 2>/dev/null; }
+    START_HINT="systemctl --user start brain-arm-watcher"
+fi
+
 # fail_pending [PROJ CH] — fail pending tasks (all, or one channel's), under the shared lock
 fail_pending() {
     python3 - "$BASE" "$@" <<'EOF'
@@ -41,7 +49,7 @@ if [ "$1" = "--pending" ]; then
 elif [ $# -eq 0 ]; then
     echo "=== FULL STOP ==="
     echo "1. Stopping the watcher..."
-    systemctl --user stop brain-arm-watcher.service 2>/dev/null && echo "  watcher stopped." || true
+    stop_watcher && echo "  watcher stopped." || true
     pkill -f watcher.py 2>/dev/null || true
 
     echo "2. Killing every running arm..."
@@ -53,7 +61,7 @@ elif [ $# -eq 0 ]; then
     echo "4. Closing tmux session '$SESSION'..."
     tmux kill-session -t "$SESSION" 2>/dev/null && echo "  tmux closed." || echo "  tmux session not found."
 
-    echo "=== Everything stopped. Restart with: systemctl --user start brain-arm-watcher ==="
+    echo "=== Everything stopped. Restart the watcher with: $START_HINT ==="
 
 else
     PROJ="$1"

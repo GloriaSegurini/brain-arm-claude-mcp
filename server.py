@@ -13,7 +13,10 @@ from typing import Literal, Optional
 
 from mcp.server import MCPServer
 
+from config import CONFIG
 from store import DATA_DIR, locked, read_json as load, update_json, write_json
+
+WAIT_WINDOW_SEC = CONFIG["wait_window_sec"]
 
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -248,12 +251,12 @@ def _minutes_since(iso: Optional[str]) -> int:
 
 @server.tool()
 async def wait_for_task(task_id: str) -> str:
-    """[BRAIN] Wait for an ARM task to finish (up to ~50 s per call; no tokens are spent while it waits).
+    """[BRAIN] Wait for an ARM task to finish (up to about a minute per call; no tokens are spent while it waits).
     If it answers 'wait …', call it again IMMEDIATELY with the same task_id, without writing to the user
     and without asking them to tell you when it's done: waiting is this tool's job.
     When it answers 'done/failed/needs_clarification …', read the outcome with get_result(task_id)."""
     t = None
-    deadline = _time.time() + 50
+    deadline = _time.time() + WAIT_WINDOW_SEC
     while _time.time() < deadline:
         try:
             t = _get_task_by_id(task_id)
