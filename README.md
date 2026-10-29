@@ -203,34 +203,14 @@ Some of these may replace parts of brain-arm over time (e.g. messaging instead o
 
 ## Architecture
 
-> **Interactive walkthrough:** [docs/architecture.html](https://gloriasegurini.github.io/brain-arm-claude-mcp/architecture.html)
-> — click any component to see what it is, or step through the life of a task.
-> (GitHub can't run scripts inside a README; the page is served by GitHub Pages. Locally, open
-> `docs/architecture.html` in a browser.)
+![brain-arm architecture, step by step](docs/architecture-demo.gif)
 
-```mermaid
-flowchart LR
-  subgraph WIN["Windows"]
-    B["Brain<br/>Claude Desktop chat"]
-  end
-  subgraph WSL["WSL2 (Linux)"]
-    S["MCP server<br/>server.py (stdio)"]
-    Q[("Task queue<br/>data/tasks.json")]
-    W["Watcher<br/>systemd user service"]
-    T["Status table<br/>status.py"]
-    subgraph TMUX["tmux session 'arms'"]
-      A["Arm<br/>Claude Code, one per channel"]
-    end
-    R["Project repository"]
-  end
-  B -- "MCP tools over stdio" --> S
-  S -- "create / read tasks" --> Q
-  W -- "polls every 5 s" --> Q
-  W -- "starts, notifies, closes" --> A
-  A -- "arm_helper.py get/start/done/fail" --> Q
-  A -- "reads, edits, tests" --> R
-  T -- reads --> Q
-```
+*The life of a task, step by step: the highlighted components are the ones involved in each step.*
+
+**Want to explore it yourself?** Open the [interactive architecture page](https://gloriasegurini.github.io/brain-arm-claude-mcp/architecture.html):
+click any component to see what it is, or move through the steps at your own pace.
+(A README can't run interactive content, so the page is published separately with GitHub Pages; you can also
+open `docs/architecture.html` from your copy of the repository.)
 
 The components never talk to each other directly: they meet on the **task queue** (a shared blackboard).
 
@@ -339,36 +319,8 @@ Code installation. Long results are piped through stdin (`… | arm_helper.py do
 
 ## Installation
 
-> **Step-by-step guide — copy-paste commands and a check after every step: [INSTALL.md](INSTALL.md)** (≈ 20 minutes).
-
-| | Windows 10/11 | macOS | Linux |
-|---|---|---|---|
-| Where brain-arm runs | inside **WSL2** (Ubuntu) | natively | natively |
-| Starts automatically with | systemd | launchd | systemd |
-| Brain (Claude Desktop) | ✅ Windows app | ✅ Mac app | ❌ no official app — watcher and arms work, the brain needs another MCP client |
-
-**In short** (details and checks for every step in INSTALL.md):
-
-1. Install the prerequisites — `python3` ≥ 3.10 with `venv`, `tmux`, `git`, `watch`, **Claude Code** (recent
-   version: auto mode needs it) and **Claude Desktop**. On Windows, first install WSL2 and enable systemd.
-2. Get the code and install:
-   ```bash
-   git clone https://github.com/GloriaSegurini/brain-arm-claude-mcp.git ~/brain-arm
-   cd ~/brain-arm
-   ./install.sh --check      # tells you exactly what is missing and how to install it; changes nothing
-   ./install.sh              # venv, watcher service, and (if you answer y) the Claude Desktop entry
-   ```
-3. Quit Claude Desktop completely and reopen it.
-4. Map your projects and trust their folders once:
-   ```bash
-   ./add-project.sh webshop ~/code/webshop
-   cd ~/code/webshop && claude      # accept the trust question, then /exit
-   ```
-5. Paste [`docs/brain-instructions.md`](docs/brain-instructions.md) into your Claude Desktop project instructions.
-6. *(Optional)* `python3 automode_devtest.py --apply` — a narrow auto-mode exception for DEV/TEST environments
-   (production, secret printing, bulk deletes and permission changes stay protected; it adds to the default
-   rules and backs up your settings).
-7. Run the end-to-end test described in INSTALL.md → *Verify everything*.
+👉 **Follow the step-by-step guide: [INSTALL.md](INSTALL.md)** — separate paths for **Windows** and **Mac**,
+written for people who have never used a terminal (about 20 minutes).
 
 ---
 
