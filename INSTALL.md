@@ -345,7 +345,7 @@ A **project folder** is the folder that contains the code the arm will work on.
 | Windows: `Wsl/Service/E_UNEXPECTED`, or brain-arm stops responding | In PowerShell: `wsl --shutdown`, open Ubuntu, restart Claude Desktop. |
 | A task stays in `PEND` | The project isn't mapped (`./add-project.sh --list`), the folder isn't trusted (C3), or the watcher is off (run `./install.sh` again). |
 | The arm keeps asking for permission | Update Claude Code: `claude update`. |
-| `pip install failed` | Internet or company proxy problem: try again, or ask IT for the proxy settings. |
+| `pip install failed` | Internet or proxy problem: check your connection and try again. |
 
 ## Updating brain-arm
 ```bash

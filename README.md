@@ -171,12 +171,12 @@ The queue is a file, not a process: it survives crashes, restarts and closed win
 arms live for the duration of the work and are closed automatically. A dead arm loses nothing; a failed task
 can be re-sent as is. The watcher starts with the OS session and restarts on failure.
 
-### 5. Fits enterprise constraints
+### 5. Simple building blocks, explicit permissions
 
-brain-arm is built only from primitives that a locked-down environment usually allows: a local stdio MCP
-server, Claude Code with auto mode and explicit permission rules, files, tmux and systemd. No inbound network
-port, no extra hosted service. It adds cost guards, a full audit trail of delegated work, and explicit,
-narrow exceptions instead of blanket permissions.
+brain-arm is built only from simple, standard pieces: a local stdio MCP server, Claude Code with auto mode and
+explicit permission rules, files, tmux and systemd/launchd. No inbound network port, no extra hosted service.
+It adds cost guards, a full audit trail of delegated work, and explicit, narrow exceptions instead of blanket
+permissions.
 
 **Track record** (author's usage, Aug–Oct 2026): 706 tasks delegated, **639 done (90.5%)**, 17 where the arm
 asked for clarification instead of guessing, 50 failed — of which 23 during the initial build of the tool,
@@ -199,7 +199,7 @@ conversation that should not drown in tool output.
 | **`opusplan`** model setting | Opus plans, Sonnet executes | Same context passed between models, sequentially; no parallel workers. |
 | **Cross-session messaging** | Your sessions can message each other | A transport, not an orchestrator: it doesn't launch sessions or route work. |
 | **Background sessions** (`claude --bg`, preview) | Sessions running in the background with an overview | Similar to the tmux arms, without queue or routing. |
-| **Plugins / mods** | Hooks and UI customizations inside a session | A customization layer, not delegation; user hooks may be disabled by managed settings. |
+| **Plugins / mods** | Hooks and UI customizations inside a session | A customization layer, not delegation. |
 
 Some of these may replace parts of brain-arm over time (e.g. messaging instead of tmux key injection).
 
@@ -300,7 +300,7 @@ its tasks fail; at most 5 arms run at once (all configurable).
 `wait_for_task`, `get_result`, `check_updates`, `list_channels`, `get_tasks`, `update_task`,
 `write_context` / `read_context` / `clear_context`, `log` / `get_log`.
 
-**Why arms don't use MCP:** in managed environments the CLI may not load user MCP servers. Arms use
+**Why arms don't use MCP:** depending on its configuration, the CLI may not load user MCP servers. Arms use
 `arm_helper.py`, a tiny command (`get`, `start`, `done`, `fail`, `write_context`) that works with any Claude
 Code installation. Long results are piped through stdin (`… | arm_helper.py done ID -`).
 
@@ -400,7 +400,6 @@ Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored,
 | Claude Desktop: "not a valid MCP server configuration" | Use the `command: "wsl"` form, not `url`. Quit Desktop from the tray after editing the config. |
 | `create_task` refused | project/channel missing or `default`: set the chat identity (see `docs/brain-instructions.md`). |
 | Task blocked by the auto-mode classifier | Working as intended. Run the step yourself, or add a narrow rule (see `automode_devtest.py`). Don't route around it. |
-| `claude` hangs at startup in WSL with managed settings | Managed settings that force a remote refresh may be unreachable from WSL; check with your administrator. |
 | Restarting the watcher | `systemctl --user restart brain-arm-watcher` — running arms are kept and re-adopted. |
 
 ---
