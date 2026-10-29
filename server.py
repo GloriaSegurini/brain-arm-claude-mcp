@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-brain-arm MCP server — stdio transport
-Contesto condiviso tra Claude for Windows (brain) e Claude Code / WSL (arm).
-Ogni client lancia il processo; i dati condivisi vivono in data/*.json (vedi store.py).
+brain-arm MCP server (stdio transport).
+Shared state between the brain (Claude Desktop) and the arms (Claude Code).
+Claude Desktop launches this process; shared data lives in data/*.json (see store.py).
 """
 
 import asyncio
@@ -29,67 +29,67 @@ def now() -> str:
 
 server = MCPServer(
     "brain-arm",
-    description="Contesto condiviso brain (Claude for Windows) <-> arm (Claude Code)",
+    description="Shared queue and context between the brain (Claude Desktop) and the arms (Claude Code)",
 )
 
 
-# ── Modalità ────────────────────────────────────────────────────────────────
+# ── Mode ────────────────────────────────────────────────────────────────────
 
 @server.tool()
 def set_mode(mode: Literal["brainstorm", "implement"]) -> str:
-    """Imposta la modalità della sessione.
-    • brainstorm → solo ideazione e contesto condiviso; i task sono bloccati.
-    • implement  → brain crea task, arm li esegue.
+    """Set the session mode.
+    • brainstorm → ideas and shared context only; tasks are disabled.
+    • implement  → the brain creates tasks, the arms execute them.
     """
     with locked():
         write_json(MODE_FILE, {"mode": mode, "updated_at": now()})
-    return f"Modalità → {mode}"
+    return f"Mode → {mode}"
 
 
 @server.tool()
 def get_mode() -> str:
-    """Restituisce la modalità corrente della sessione (brainstorm o implement)."""
+    """Return the current session mode (brainstorm or implement)."""
     data = load(MODE_FILE, {"mode": "brainstorm"})
-    return f"Modalità corrente: {data['mode']}"
+    return f"Current mode: {data['mode']}"
 
 
-# ── Contesto condiviso ───────────────────────────────────────────────────────
+# ── Shared context ───────────────────────────────────────────────────────────
 
 @server.tool()
 def write_context(key: str, value: str) -> str:
-    """Salva una voce nel contesto condiviso (leggibile da brain e arm).
-    Usalo per: architettura, decisioni, vincoli, glossario, idee emerse.
+    """Save an entry in the shared context (readable by brain and arms).
+    Use it for: architecture, decisions, constraints, glossary, ideas.
     """
     with update_json(CONTEXT_FILE, {}) as ctx:
         ctx[key] = {"value": value, "updated_at": now()}
-    return f"Contesto '{key}' salvato."
+    return f"Context '{key}' saved."
 
 
 @server.tool()
 def read_context(key: Optional[str] = None) -> str:
-    """Legge il contesto condiviso. Ometti 'key' per leggere tutto."""
+    """Read the shared context. Omit 'key' to read everything."""
     ctx = load(CONTEXT_FILE, {})
     if key:
         val = ctx.get(key)
         if val is None:
-            return f"Chiave '{key}' non trovata."
+            return f"Key '{key}' not found."
         return json.dumps(val["value"], ensure_ascii=False, indent=2)
     out = {k: v["value"] for k, v in ctx.items()}
     if not out:
-        return "Contesto vuoto."
+        return "Context is empty."
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
 @server.tool()
 def clear_context(key: Optional[str] = None) -> str:
-    """Rimuove una chiave dal contesto, o svuota tutto se 'key' è omessa."""
+    """Remove a key from the context, or clear everything if 'key' is omitted."""
     if key:
         with update_json(CONTEXT_FILE, {}) as ctx:
             ctx.pop(key, None)
-        return f"Chiave '{key}' rimossa."
+        return f"Key '{key}' removed."
     with locked():
         write_json(CONTEXT_FILE, {})
-    return "Contesto svuotato."
+    return "Context cleared."
 
 
 # ── Task queue ───────────────────────────────────────────────────────────────
@@ -103,20 +103,20 @@ def create_task(
     files: Optional[str] = None,
     priority: Literal["low", "normal", "high"] = "normal",
 ) -> str:
-    """[SOLO modalità implement] Brain invia un task a un ARM (Claude Code).
-    Includi nella description: cosa fare, logica da applicare, file da modificare, criterio di successo.
-    'project': OBBLIGATORIO, nome del progetto come nella mappa progetti. Es: "webshop", "data-platform".
-    'channel': OBBLIGATORIO, la chat brain corrente in kebab-case (sempre lo stesso per questa chat).
-    'files': path separati da virgola (opzionale).
-    Dopo la creazione chiama SUBITO wait_for_task(task_id) e ripetilo finché non è concluso.
+    """[implement mode only] The brain sends a task to an ARM (Claude Code).
+    In the description state: what to do, the logic to apply, files or area, and how to tell it worked.
+    'project': REQUIRED, the project key as in the projects map. E.g. "webshop", "data-platform".
+    'channel': REQUIRED, this brain chat in kebab-case (always the same for this chat).
+    'files': comma-separated paths (optional).
+    After creating it, call wait_for_task(task_id) IMMEDIATELY and repeat until it is closed.
     """
     if "default" in (project, channel) or not project.strip() or not channel.strip():
-        return ("Task NON creato: project e channel devono essere quelli di questa chat, non 'default'. "
-                "Se non li conosci, chiedili all'utente una sola volta e salvali con "
+        return ("Task NOT created: project and channel must be this chat's ones, not 'default'. "
+                "If you don't know them, ask the user once and save them with "
                 "write_context('__brain__', 'project=X channel=Y').")
     mode = load(MODE_FILE, {"mode": "brainstorm"})["mode"]
     if mode != "implement":
-        return "I task sono disabilitati in modalità 'brainstorm'. Chiama set_mode('implement') prima."
+        return "Tasks are disabled in 'brainstorm' mode. Call set_mode('implement') first."
     with update_json(TASKS_FILE, []) as tasks:
         task_id = f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(tasks):03d}"
         tasks.append({
@@ -132,9 +132,9 @@ def create_task(
             "updated_at":  None,
             "result":      None,
         })
-    return (f"Task creato: {task_id} [project={project} channel={channel}]\n→ {title}\n"
-            f"PROSSIMO PASSO: chiama subito wait_for_task('{task_id}') e richiamalo finché non risponde "
-            f"done/failed/needs_clarification. Non chiedere all'utente di avvisarti.")
+    return (f"Task created: {task_id} [project={project} channel={channel}]\n→ {title}\n"
+            f"NEXT STEP: call wait_for_task('{task_id}') now and call it again until it answers "
+            f"done/failed/needs_clarification. Do not ask the user to tell you when it's finished.")
 
 
 @server.tool()
@@ -143,10 +143,10 @@ def get_tasks(
     project: Optional[str] = None,
     channel: Optional[str] = None,
 ) -> str:
-    """[ARM] Recupera i task filtrati per status, project e/o channel.
-    • project only  → tutti i task del progetto (utile per un arm che copre tutto il progetto)
-    • project+channel → solo i task di quella specifica chat brain (un arm per chat)
-    • nessun filtro  → tutti i task (sconsigliato con più progetti paralleli)
+    """List tasks filtered by status, project and/or channel.
+    • project only    → every task of the project
+    • project+channel → only the tasks of that brain chat
+    • no filter       → all tasks (not recommended with several projects)
     """
     tasks = load(TASKS_FILE, [])
     if status != "all":
@@ -160,16 +160,14 @@ def get_tasks(
             f" project='{project}'" if project else "",
             f" channel='{channel}'" if channel else "",
         ])
-        return f"Nessun task con status='{status}'{label}."
+        return f"No tasks with status='{status}'{label}."
     return json.dumps(tasks, ensure_ascii=False, indent=2)
 
 
 @server.tool()
 def list_channels(project: Optional[str] = None) -> str:
-    """Elenca i canali (chat brain) attivi, raggruppati per progetto.
-    Passa 'project' per filtrare su un solo progetto.
-    Mostra per ogni canale: quanti task pending, in_progress, done.
-    Utile per sapere su quale channel avviare un loop arm.
+    """List the channels (brain chats) grouped by project, with pending / in_progress / done / failed counts.
+    Pass 'project' to filter on one project.
     """
     tasks = load(TASKS_FILE, [])
     if project is not None:
@@ -183,7 +181,7 @@ def list_channels(project: Optional[str] = None) -> str:
         if s in groups[key]:
             groups[key][s] += 1
     if not groups:
-        return "Nessun canale trovato." + (f" (project='{project}')" if project else "")
+        return "No channels found." + (f" (project='{project}')" if project else "")
     lines = []
     for (proj, ch), counts in sorted(groups.items()):
         lines.append(
@@ -200,7 +198,7 @@ def update_task(
     status: Literal["in_progress", "done", "failed", "needs_clarification"],
     result: Optional[str] = None,
 ) -> str:
-    """[ARM] Aggiorna lo stato di un task dopo l'esecuzione."""
+    """Update a task's status (normally done by the arm through arm_helper.py)."""
     with update_json(TASKS_FILE, []) as tasks:
         task = next((t for t in tasks if t["id"] == task_id), None)
         if task is not None:
@@ -208,36 +206,36 @@ def update_task(
             task["result"]     = result
             task["updated_at"] = now()
     if task is None:
-        return f"Task '{task_id}' non trovato."
+        return f"Task '{task_id}' not found."
     return f"Task {task_id} → {status}"
 
 
-# ── Log condiviso ────────────────────────────────────────────────────────────
+# ── Shared log ───────────────────────────────────────────────────────────────
 
 @server.tool()
 def log(message: str, source: Literal["brain", "arm", "user"] = "brain") -> str:
-    """Aggiunge un messaggio al log condiviso."""
+    """Append a message to the shared log."""
     with update_json(LOG_FILE, []) as logs:
         logs.append({"message": message, "source": source, "timestamp": now()})
-    return "Log aggiunto."
+    return "Log entry added."
 
 
 @server.tool()
 def get_log(last_n: int = 30) -> str:
-    """Legge gli ultimi N messaggi del log condiviso."""
+    """Read the last N messages of the shared log."""
     recent = load(LOG_FILE, [])[-last_n:]
     if not recent:
-        return "Log vuoto."
+        return "Log is empty."
     return "\n".join(f"[{e['timestamp']}] [{e['source'].upper():5}] {e['message']}" for e in recent)
 
 
-# ── Tools di sincronizzazione brain ─────────────────────────────────────────
+# ── Brain synchronization tools ─────────────────────────────────────────────
 
 DONE_STATES = ("done", "failed", "needs_clarification")
 
 
 def _get_task_by_id(task_id: str):
-    """Rilegge TASKS_FILE a ogni chiamata per vedere le scritture degli altri processi."""
+    """Re-read TASKS_FILE on every call to see the other processes' writes."""
     return next((t for t in load(TASKS_FILE, []) if t["id"] == task_id), None)
 
 
@@ -250,10 +248,10 @@ def _minutes_since(iso: Optional[str]) -> int:
 
 @server.tool()
 async def wait_for_task(task_id: str) -> str:
-    """[BRAIN] Attende l'esito di un task ARM (fino a ~50 s per chiamata).
-    Se risponde 'wait …' richiamalo SUBITO con lo stesso task_id, senza scrivere nulla all'utente
-    e senza chiedergli di avvisarti: l'attesa la gestisce questo strumento.
-    Quando risponde 'done/failed/needs_clarification …' leggi l'esito con get_result(task_id)."""
+    """[BRAIN] Wait for an ARM task to finish (up to ~50 s per call; no tokens are spent while it waits).
+    If it answers 'wait …', call it again IMMEDIATELY with the same task_id, without writing to the user
+    and without asking them to tell you when it's done: waiting is this tool's job.
+    When it answers 'done/failed/needs_clarification …', read the outcome with get_result(task_id)."""
     t = None
     deadline = _time.time() + 50
     while _time.time() < deadline:
@@ -263,33 +261,34 @@ async def wait_for_task(task_id: str) -> str:
             await asyncio.sleep(3)
             continue
         if t is None:
-            return f"unknown {task_id}: id inesistente, controlla di aver copiato l'id restituito da create_task."
+            return f"unknown {task_id}: no such id, check you copied the id returned by create_task."
         if t["status"] in DONE_STATES:
-            return (f'{t["status"]} {task_id} — ora chiama get_result("{task_id}"), '
-                    f"verifica l'esito e riferiscilo all'utente.")
+            return (f'{t["status"]} {task_id} — now call get_result("{task_id}"), '
+                    f"check the outcome and report it to the user.")
         await asyncio.sleep(3)
-    again = f"Richiama subito wait_for_task('{task_id}') senza scrivere nulla all'utente."
+    again = f"Call wait_for_task('{task_id}') again now, without writing to the user."
     if t is None:
-        return f"wait {task_id}: coda momentaneamente non leggibile. {again}"
+        return f"wait {task_id}: queue temporarily unreadable. {again}"
     if t["status"] == "pending":
         mins = _minutes_since(t.get("created_at"))
         if mins >= 3:
-            return (f"wait {task_id}: ancora pending da {mins} min, nessun arm l'ha preso. Cause probabili: "
-                    f"project/channel ('{t.get('project')}'/'{t.get('channel')}') senza cartella nella mappa "
-                    f"progetti, oppure watcher fermo. Avvisa l'utente UNA volta con questa diagnosi, poi {again[0].lower()}{again[1:]}")
-        return f"wait {task_id}: pending da {mins} min, l'arm lo sta per prendere. {again}"
+            return (f"wait {task_id}: still pending after {mins} min, no arm has picked it up. Likely causes: "
+                    f"project/channel ('{t.get('project')}'/'{t.get('channel')}') has no folder in the projects "
+                    f"map, or the watcher is not running. Tell the user ONCE with this diagnosis, then call "
+                    f"wait_for_task('{task_id}') again.")
+        return f"wait {task_id}: pending for {mins} min, an arm is about to pick it up. {again}"
     mins = _minutes_since(t.get("updated_at"))
-    return f"wait {task_id}: in_progress da {mins} min, l'arm ci sta lavorando. {again}"
+    return f"wait {task_id}: in_progress for {mins} min, the arm is working on it. {again}"
 
 
 @server.tool()
 def get_result(task_id: str) -> str:
-    """[BRAIN] Output completo di un task concluso."""
+    """[BRAIN] Full output of a closed task."""
     try:
         t = _get_task_by_id(task_id)
         if t is None:
             return f"unknown {task_id}"
-        return t.get("result") or "(nessun result)"
+        return t.get("result") or "(no result)"
     except Exception as e:
         return f"error {type(e).__name__}: {e}"
 
@@ -300,10 +299,9 @@ def check_updates(
     project: Optional[str] = None,
     channel: Optional[str] = None,
 ) -> str:
-    """[BRAIN] Task conclusi da ARM e non ancora visti dal brain. '0' se nulla di nuovo.
-    ack=False per lettura non distruttiva.
-    Filtra per 'project' e/o 'channel' per vedere solo i propri aggiornamenti.
-    Il cursore è per-canale: due brain chat non si sovrascrivono mai.
+    """[BRAIN] Tasks closed by arms and not yet seen by the brain. '0' if nothing new.
+    ack=False for a non-destructive read. Filter by 'project' and/or 'channel' to see only your own.
+    The cursor is per channel: two brain chats never overwrite each other.
     """
     try:
         cursor_key = "brain_cursor"
@@ -313,24 +311,24 @@ def check_updates(
             cursor_key += f"_{channel}"
         cursor_entry = load(CONTEXT_FILE, {}).get(cursor_key)
         cursor = cursor_entry["value"] if cursor_entry else ""
-        nuovi = [
+        new = [
             t for t in load(TASKS_FILE, [])
             if t["status"] in DONE_STATES
             and (t.get("updated_at") or "") > cursor
             and (project is None or t.get("project", "default") == project)
             and (channel is None or t.get("channel", "default") == channel)
         ]
-        if not nuovi:
+        if not new:
             return "0"
         if ack:
             with update_json(CONTEXT_FILE, {}) as ctx:
-                ctx[cursor_key] = {"value": max(t["updated_at"] for t in nuovi), "updated_at": now()}
-        return "\n".join(f'{t["id"]} {t["status"]} {t["title"][:60]}' for t in nuovi)
+                ctx[cursor_key] = {"value": max(t["updated_at"] for t in new), "updated_at": now()}
+        return "\n".join(f'{t["id"]} {t["status"]} {t["title"][:60]}' for t in new)
     except Exception as e:
         return f"error {type(e).__name__}: {e}"
 
 
-# ── Avvio ────────────────────────────────────────────────────────────────────
+# ── Start ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     server.run(transport="stdio")

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Aggiunge alle regole dell'auto mode (in ~/.claude/settings.json) un'eccezione generale:
-letture e scritture sugli ambienti DEV/TEST con credenziali dal .env del progetto.
-Non toglie nessuna regola esistente: parte dalle regole attuali (o dai default) e AGGIUNGE
-le due regole brain-arm (se ne esiste già una versione precedente, la sostituisce).
-Uso:  python3 ~/brain-arm-mcp/automode_devtest.py          → mostra cosa cambierebbe
-      python3 ~/brain-arm-mcp/automode_devtest.py --apply  → applica (con backup)
-Ripristino: copia il backup stampato su ~/.claude/settings.json, oppure `claude auto-mode reset`.
+Add to the auto-mode rules (in ~/.claude/settings.json) a general exception:
+reads and writes on DEV/TEST environments with credentials from the project's .env.
+It removes no existing rule: it starts from your current rules (or the defaults) and ADDS the two
+brain-arm rules (replacing a previous version of them, if present).
+Usage:  python3 automode_devtest.py          → show what would change
+        python3 automode_devtest.py --apply  → apply (with a backup)
+Undo: copy the printed backup over ~/.claude/settings.json, or run `claude auto-mode reset`.
 """
 import json
 import shutil
@@ -54,7 +54,7 @@ ENV_RULE = (
 def claude_json(*args):
     out = subprocess.run(["claude", "auto-mode", *args], capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
-        raise SystemExit(f"errore da 'claude auto-mode {' '.join(args)}': {out.stderr.strip()}")
+        raise SystemExit(f"error from 'claude auto-mode {' '.join(args)}': {out.stderr.strip()}")
     return json.loads(out.stdout)
 
 
@@ -71,28 +71,28 @@ def main():
         base.append(rule)
         new_auto[section] = base
 
-    print("Regole che verranno AGGIUNTE o AGGIORNATE (le altre restano invariate):")
+    print("Rules that will be ADDED or UPDATED (all others stay as they are):")
     print("  allow       +1  →", ALLOW_RULE[:110], "…")
     print("  environment +1  →", ENV_RULE[:110], "…")
-    print(f"  allow: {len(new_auto['allow'])} regole totali, environment: {len(new_auto['environment'])} voci totali")
+    print(f"  allow: {len(new_auto['allow'])} rules in total, environment: {len(new_auto['environment'])} entries in total")
 
     if not apply:
-        print("\nNessuna modifica fatta. Per applicare: python3 ~/brain-arm-mcp/automode_devtest.py --apply")
+        print("\nNothing changed. To apply: python3 automode_devtest.py --apply")
         return
 
     backup = SETTINGS.with_name(f"settings.json.bak-{datetime.now():%Y%m%d-%H%M%S}")
     shutil.copy2(SETTINGS, backup)
     settings["autoMode"] = new_auto
     SETTINGS.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nApplicato. Backup: {backup}")
+    print(f"\nApplied. Backup: {backup}")
 
     effective = claude_json("config")
     ok_allow = ALLOW_RULE in effective.get("allow", [])
     ok_env = ENV_RULE in effective.get("environment", [])
     lost = [s for s in ("allow", "environment") if len(effective.get(s, [])) < len(defaults.get(s, []))]
-    print(f"Verifica 'claude auto-mode config': allow={'OK' if ok_allow else 'MANCANTE'}, "
-          f"environment={'OK' if ok_env else 'MANCANTE'}, regole di default perse: {lost or 'nessuna'}")
-    print("\nPer un parere sulle regole nuove:  claude auto-mode critique")
+    print(f"Check 'claude auto-mode config': allow={'OK' if ok_allow else 'MISSING'}, "
+          f"environment={'OK' if ok_env else 'MISSING'}, default rules lost: {lost or 'none'}")
+    print("\nFor feedback on the new rules:  claude auto-mode critique")
 
 
 if __name__ == "__main__":

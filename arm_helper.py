@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Helper per arm: legge e aggiorna la coda senza MCP (scritture con lock, vedi store.py).
-Uso:
-  arm_helper.py get PROJECT CHANNEL           → lista task pending (JSON)
-  arm_helper.py start TASK_ID                 → marca in_progress
-  arm_helper.py done  TASK_ID "risultato"     → marca done   ('-' = risultato da stdin)
-  arm_helper.py fail  TASK_ID "motivo"        → marca failed ('-' = motivo da stdin)
-  arm_helper.py write_context KEY VALUE       → scrive in context.json ('-' o assente = da stdin)
+The arms' interface to the task queue (no MCP needed; writes are locked, see store.py).
+Usage:
+  arm_helper.py get PROJECT CHANNEL           → list pending tasks (JSON)
+  arm_helper.py start TASK_ID                 → mark in_progress
+  arm_helper.py done  TASK_ID "result"        → mark done   ('-' = read the result from stdin)
+  arm_helper.py fail  TASK_ID "reason"        → mark failed ('-' = read the reason from stdin)
+  arm_helper.py write_context KEY VALUE       → write to context.json ('-' or missing = from stdin)
 """
 import json
 import sys
@@ -23,13 +23,13 @@ def now():
 
 
 def text_arg(i: int) -> str:
-    """Argomento di testo; '-' = leggi da stdin, per testi lunghi."""
+    """Text argument; '-' means read it from stdin (for long texts)."""
     if len(sys.argv) <= i:
         return ""
     return sys.stdin.read() if sys.argv[i] == "-" else sys.argv[i]
 
 
-def set_status(task_id: str, status: str, result=None) -> bool:
+def set_status(task_id: str, status: str, result=None) -> None:
     with update_json(TASKS_FILE, []) as tasks:
         task = next((t for t in tasks if t["id"] == task_id), None)
         if task is not None:
@@ -38,9 +38,8 @@ def set_status(task_id: str, status: str, result=None) -> bool:
                 task["result"] = result
             task["updated_at"] = now()
     if task is None:
-        print(f"errore: task {task_id} non trovato", file=sys.stderr)
+        print(f"error: task {task_id} not found", file=sys.stderr)
         sys.exit(1)
-    return True
 
 
 cmd = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -62,7 +61,7 @@ elif cmd == "start":
 elif cmd == "done":
     result = text_arg(3)
     set_status(sys.argv[2], "done", result)
-    print(f"ok: {sys.argv[2]} → done ({len(result)} caratteri di risultato)")
+    print(f"ok: {sys.argv[2]} → done ({len(result)} characters of result)")
 
 elif cmd == "fail":
     result = text_arg(3)
@@ -74,8 +73,8 @@ elif cmd == "write_context":
     value = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != "-" else sys.stdin.read()
     with update_json(CTX_FILE, {}) as ctx:
         ctx[key] = {"value": value, "updated_at": now()}
-    print(f"ok: context[{key}] scritto ({len(value)} chars)")
+    print(f"ok: context[{key}] written ({len(value)} chars)")
 
 else:
-    print(f"Comando sconosciuto: {cmd}", file=sys.stderr)
+    print(f"Unknown command: {cmd}", file=sys.stderr)
     sys.exit(1)

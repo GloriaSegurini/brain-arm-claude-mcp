@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-brain-arm watcher v6 — un arm Claude Code INTERATTIVO per canale, ognuno in una finestra tmux.
-Lo vedi in diretta (tmux attach -t arms) e, se serve, approvi i permessi da lì.
-Arm: sonnet 5.5, effort medium, permission-mode auto.
+brain-arm watcher — one INTERACTIVE Claude Code arm per channel, each in its own tmux window.
+Watch it live (tmux attach -t arms) and, if needed, answer prompts from there.
+Defaults (config.py): Sonnet 5.5, medium effort, auto permission mode.
 
-Protezioni:
-  - 3 uscite rapide (<30s) di fila per canale → task pending marcati failed, canale in pausa 5 min
-  - arm al lavoro senza pause da più di 60 min → finestra chiusa, task in_progress marcati failed
-  - nessun task pending/in_progress per 1 ora → arm chiuso
-  - max 5 arm contemporanei
+Safety limits:
+  - 3 fast exits (<30 s) in a row for a channel → its pending tasks fail, channel paused 5 min
+  - an arm working without a pause for more than 60 min → window closed, its tasks fail
+  - an arm that picks up no task within 10 min → window closed, pending tasks fail
+  - no pending/in_progress task for 1 hour → arm closed
+  - at most 5 arms at the same time
 """
 import json
 import shlex
@@ -45,10 +46,13 @@ STUCK_NUDGE_SEC     = CONFIG["stuck_nudge_sec"]
 STUCK_RENUDGE_SEC   = CONFIG["stuck_renudge_sec"]
 STUCK_MAX_NUDGES    = CONFIG["stuck_max_nudges"]
 
+# First words of every arm prompt: stop-arms.sh and `pgrep -af` use them to find arm processes.
+ARM_MARKER = "You are the ARM for project"
+
 DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
 
-# (project, channel) -> {"win": "@id", "started": float, "idle_since": float|None, "notified": set}
+# (project, channel) -> {"win": "@id", "started": float, "busy_since": float|None, "idle_since": float|None, "notified": set}
 running: dict = {}
 # (project, channel) -> {"count": int, "last_fail": float}
 failures: dict = {}
@@ -101,14 +105,14 @@ def fail_tasks(project: str, channel: str, statuses: tuple, reason: str):
                 t["updated_at"] = ts()
                 changed += 1
     if changed:
-        log(f"[FAIL] {changed} task marcati failed per {project}:{channel}: {reason}")
+        log(f"[FAIL] {changed} task(s) failed for {project}:{channel}: {reason}")
 
 
 def ensure_tmux_session():
     if tmux("has-session", "-t", TMUX_SESSION).returncode != 0:
         tmux("new-session", "-d", "-s", TMUX_SESSION, "-n", "status")
         tmux("send-keys", "-t", f"{TMUX_SESSION}:status", f"watch -n3 python3 {STATUS_PY}", "Enter")
-        log(f"tmux session '{TMUX_SESSION}' creata")
+        log(f"tmux session '{TMUX_SESSION}' created")
 
 
 def window_alive(win: str) -> bool:
@@ -120,7 +124,7 @@ NOT_ARM_CMDS = {"tail", "watch", "less"}
 
 
 def arm_windows() -> list:
-    """Finestre tmux 'progetto:canale' in cui gira davvero un arm; chiude quelle vecchie (es. tail -f)."""
+    """'project:channel' tmux windows that really run an arm; closes leftovers (e.g. an old tail -f)."""
     r = tmux("list-windows", "-t", TMUX_SESSION, "-F", "#{window_id} #{pane_current_command} #{window_name}")
     result = []
     for line in r.stdout.strip().splitlines():
@@ -129,41 +133,41 @@ def arm_windows() -> list:
             continue
         if cmd in NOT_ARM_CMDS:
             tmux("kill-window", "-t", win)
-            log(f"[CLEAN] chiusa finestra {name} ({win}): non è un arm ({cmd})")
+            log(f"[CLEAN] closed window {name} ({win}): not an arm ({cmd})")
             continue
         result.append((win, name))
     return result
 
 
 def adopt_existing_windows():
-    """Dopo un riavvio del watcher, riconosce gli arm già aperti invece di duplicarli."""
+    """After a watcher restart, take over the arms that are already open instead of duplicating them."""
     for win, name in arm_windows():
         project, _, channel = name.partition(":")
         running[(project, channel)] = {
             "win": win, "started": time.time(), "busy_since": None,
             "idle_since": None, "notified": set()
         }
-        log(f"[ADOPT] arm già attivo {name} ({win})")
+        log(f"[ADOPT] arm already running {name} ({win})")
 
 
 def arm_prompt(project: str, channel: str, work_dir: str) -> str:
     return (
-        f'Sei l\'ARM del progetto "{project}", chat "{channel}".\n'
-        f'Cartella di lavoro: {work_dir}. Per file temporanei usa {work_dir}/.arm_scratch/\n'
-        f'I task si gestiscono SOLO con questo helper (non usare MCP):\n'
+        f'{ARM_MARKER} "{project}", chat "{channel}".\n'
+        f'Working directory: {work_dir}. For temporary files use {work_dir}/.arm_scratch/\n'
+        f'Manage tasks ONLY with this helper (do not use MCP):\n'
         f'  python3 {HELPER} get {project} {channel}\n'
         f'  python3 {HELPER} start TASK_ID\n'
-        f'  python3 {HELPER} done TASK_ID "risultato"\n'
-        f'  python3 {HELPER} fail TASK_ID "motivo"\n'
-        f'  cat risultato.txt | python3 {HELPER} done TASK_ID -   # risultato lungo da file\n'
-        f'  python3 {HELPER} write_context KEY "valore"\n'
+        f'  python3 {HELPER} done TASK_ID "result"\n'
+        f'  python3 {HELPER} fail TASK_ID "reason"\n'
+        f'  cat result.txt | python3 {HELPER} done TASK_ID -   # long result from a file\n'
+        f'  python3 {HELPER} write_context KEY "value"\n'
         f'  cat file.txt | python3 {HELPER} write_context KEY -\n\n'
-        f'Per ogni task: get → start → esegui → done (o fail). Chiudi SEMPRE ogni task con done o fail.\n'
-        f'Non fare domande e non chiedere preferenze: se hai un dubbio scegli l\'opzione più sicura.\n'
-        f'Se un comando viene negato: fail TASK_ID "PERMESSO NEGATO: <comando> — richiede autorizzazione esplicita".\n'
-        f'L\'ultimo comando di ogni task è SEMPRE done o fail: un task lasciato in_progress blocca la brain.\n'
-        f'Scrivi "ARM in attesa" e fermati solo quando non ci sono più task pending E hai chiuso tutti quelli avviati.\n'
-        f'Se ricevi il messaggio "nuovi task", ricomincia da get.'
+        f'For each task: get → start → do the work → done (or fail). ALWAYS close every task with done or fail.\n'
+        f'Do not ask questions or preferences: if in doubt, choose the safest option.\n'
+        f'If a command is denied: fail TASK_ID "PERMISSION DENIED: <command> — needs explicit authorization".\n'
+        f'The last command of every task is ALWAYS done or fail: a task left in_progress blocks the brain.\n'
+        f'Write "ARM waiting" and stop only when there are no pending tasks AND you closed every task you started.\n'
+        f'When you receive the message "new tasks", start again from get.'
     )
 
 
@@ -171,14 +175,14 @@ def launch_arm(project: str, channel: str, pending_ids: list):
     key = (project, channel)
 
     if len(running) >= MAX_CONCURRENT:
-        log(f"[SKIP] max {MAX_CONCURRENT} arm contemporanei, skip {project}:{channel}")
+        log(f"[SKIP] {MAX_CONCURRENT} arms already running, skipping {project}:{channel}")
         return
 
     f = failures.get(key, {"count": 0, "last_fail": 0.0})
     if f["count"] >= MAX_FAILURES:
         if time.time() - f["last_fail"] > FAILURE_RESET_SEC:
             failures.pop(key, None)
-            log(f"[RESET] fallimenti resettati per {project}:{channel}")
+            log(f"[RESET] failure counter reset for {project}:{channel}")
         else:
             return
 
@@ -187,7 +191,7 @@ def launch_arm(project: str, channel: str, pending_ids: list):
         if name == wname:
             running[key] = {"win": win, "started": time.time(), "busy_since": time.time(),
                             "idle_since": None, "notified": set()}
-            log(f"[ADOPT] finestra {wname} già aperta ({win}), la riuso invece di duplicarla")
+            log(f"[ADOPT] window {wname} already open ({win}), reusing it")
             notify_new_tasks(key, pending_ids)
             return
 
@@ -195,8 +199,8 @@ def launch_arm(project: str, channel: str, pending_ids: list):
     work_dir = projects.get(f"{project}:{channel}") or projects.get(project)
     if not work_dir or not Path(work_dir).is_dir():
         fail_tasks(project, channel, ("pending",),
-                   f"progetto '{project}' senza cartella in ~/.brain-arm-projects.json: "
-                   f"controlla project/channel nella chat brain o aggiungi il progetto alla mappa")
+                   f"project '{project}' has no folder in the projects map ({PROJECTS_FILE}): "
+                   f"check project/channel in the brain chat or add the project to the map")
         return
     log_file = LOGS_DIR / f"{project}--{channel}.log"
 
@@ -219,16 +223,16 @@ def launch_arm(project: str, channel: str, pending_ids: list):
              "-c", work_dir, "-P", "-F", "#{window_id}", cmd)
     win = r.stdout.strip()
     if r.returncode != 0 or not win:
-        log(f"[ERR] impossibile aprire finestra tmux per {project}:{channel}: {r.stderr.strip()}")
+        log(f"[ERR] cannot open a tmux window for {project}:{channel}: {r.stderr.strip()}")
         return
 
     with log_file.open("a") as lf:
-        lf.write(f"\n[{ts()}] === arm avviato (project={project} channel={channel}) ===\n")
+        lf.write(f"\n[{ts()}] === arm started (project={project} channel={channel}) ===\n")
     tmux("pipe-pane", "-o", "-t", win, f"cat >> {shlex.quote(str(log_file))}")
 
     running[key] = {"win": win, "started": time.time(), "busy_since": time.time(),
                     "idle_since": None, "notified": set(pending_ids)}
-    log(f"[ARM] avviato {project}:{channel} finestra={win} model={ARM_MODEL} perm={ARM_PERM}")
+    log(f"[ARM] started {project}:{channel} window={win} model={ARM_MODEL} perm={ARM_PERM}")
 
 
 DIALOG_MARKERS = ("Do you want", "Esc to cancel", "Enter to confirm", "trust this folder", "❯ 1.")
@@ -248,7 +252,7 @@ def send_to_arm(key: tuple, text: str) -> bool:
     v = running[key]
     if dialog_open(v["win"]):
         if not v.get("dialog_logged"):
-            log(f"[WAIT-USER] {key[0]}:{key[1]} aspetta una tua conferma nella finestra tmux")
+            log(f"[WAIT-USER] {key[0]}:{key[1]} is waiting for your confirmation in its tmux window")
             v["dialog_logged"] = True
         return False
     v["dialog_logged"] = False
@@ -259,12 +263,12 @@ def send_to_arm(key: tuple, text: str) -> bool:
 
 def notify_new_tasks(key: tuple, pending_ids: list):
     v = running[key]
-    nuovi = [i for i in pending_ids if i not in v["notified"]]
-    if not nuovi:
+    new = [i for i in pending_ids if i not in v["notified"]]
+    if not new:
         return
-    if send_to_arm(key, f"nuovi task ({len(nuovi)}): ricomincia da get"):
-        v["notified"].update(nuovi)
-        log(f"[NOTIFY] {key[0]}:{key[1]} — {len(nuovi)} nuovi task segnalati all'arm")
+    if send_to_arm(key, f"new tasks ({len(new)}): start again from get"):
+        v["notified"].update(new)
+        log(f"[NOTIFY] {key[0]}:{key[1]} — {len(new)} new task(s) passed to the arm")
 
 
 def nudge_stuck(counts: dict):
@@ -284,28 +288,28 @@ def nudge_stuck(counts: dict):
                 or (nudges and now - v.get("last_nudge", 0) < STUCK_RENUDGE_SEC)):
             continue
         ids = ", ".join(c["in_progress"])
-        msg = (f"Promemoria del watcher: {ids} risulta ancora in_progress ma la sessione e' ferma. "
-               f"Se il lavoro e' finito chiudilo ORA con arm_helper.py done (o fail) e il risultato. "
-               f"Se stai aspettando un processo in background rispondi solo: in attesa")
+        msg = (f"Reminder from the watcher: {ids} is still in_progress but the session is idle. "
+               f"If the work is finished, close it NOW with arm_helper.py done (or fail) and the result. "
+               f"If you are waiting for a background process, just answer: waiting")
         if send_to_arm(key, msg):
             v["nudges"] = nudges + 1
             v["last_nudge"] = now
-            log(f"[NUDGE] {key[0]}:{key[1]} promemoria {v['nudges']}/{STUCK_MAX_NUDGES} per {ids}")
+            log(f"[NUDGE] {key[0]}:{key[1]} reminder {v['nudges']}/{STUCK_MAX_NUDGES} for {ids}")
 
 
 def cleanup_finished():
     for key in [k for k, v in running.items() if not window_alive(v["win"])]:
         runtime = time.time() - running[key]["started"]
-        log(f"[ARM] chiuso {key[0]}:{key[1]} runtime={runtime:.0f}s")
+        log(f"[ARM] closed {key[0]}:{key[1]} runtime={runtime:.0f}s")
         if runtime < FAST_EXIT_SEC:
             f = failures.setdefault(key, {"count": 0, "last_fail": 0.0})
             f["count"] += 1
             f["last_fail"] = time.time()
-            log(f"[WARN] {key[0]}:{key[1]} uscito in {runtime:.0f}s — tentativo {f['count']}/{MAX_FAILURES}")
+            log(f"[WARN] {key[0]}:{key[1]} exited after {runtime:.0f}s — attempt {f['count']}/{MAX_FAILURES}")
             if f["count"] >= MAX_FAILURES:
-                log(f"[STOP] {key[0]}:{key[1]} in pausa dopo {MAX_FAILURES} uscite rapide")
+                log(f"[STOP] {key[0]}:{key[1]} paused after {MAX_FAILURES} fast exits")
                 fail_tasks(key[0], key[1], ("pending",),
-                           f"arm uscito {MAX_FAILURES} volte di fila all'avvio — controlla la finestra tmux/log")
+                           f"arm exited {MAX_FAILURES} times in a row at startup — check its tmux window/log")
         del running[key]
 
 
@@ -316,15 +320,16 @@ def kill_stale(counts: dict):
         busy = time.time() - v["busy_since"]
         c = counts.get(key, {"pending": [], "in_progress": []})
         if busy > STARTUP_TIMEOUT_SEC and not c["in_progress"]:
-            log(f"[KILL] {key[0]}:{key[1]} non ha preso nessun task in {busy/60:.0f}min — bloccato, chiudo")
+            log(f"[KILL] {key[0]}:{key[1]} picked up no task in {busy/60:.0f} min — stuck, closing")
             tmux("kill-window", "-t", v["win"])
             fail_tasks(key[0], key[1], ("pending",),
-                       "arm bloccato all'avvio (nessun task preso in 10 min): guarda il log del canale")
+                       f"arm stuck at startup (no task picked up in {STARTUP_TIMEOUT_SEC // 60} min): check the channel log")
             del running[key]
         elif busy > MAX_RUNTIME_SEC:
-            log(f"[KILL] {key[0]}:{key[1]} al lavoro da {busy/60:.0f}min senza pause — chiudo")
+            log(f"[KILL] {key[0]}:{key[1]} working for {busy/60:.0f} min without a pause — closing")
             tmux("kill-window", "-t", v["win"])
-            fail_tasks(key[0], key[1], ("in_progress", "pending"), "arm chiuso per timeout (60 min)")
+            fail_tasks(key[0], key[1], ("in_progress", "pending"),
+                       f"arm closed by the runtime limit ({MAX_RUNTIME_SEC // 60} min)")
             del running[key]
 
 
@@ -341,12 +346,12 @@ def close_idle(counts: dict):
         if v["idle_since"] is None:
             v["idle_since"] = now
         elif now - v["idle_since"] > IDLE_EXIT_SEC:
-            log(f"[IDLE] {key[0]}:{key[1]} senza task da {IDLE_EXIT_SEC}s — chiudo")
+            log(f"[IDLE] {key[0]}:{key[1]} no tasks for {IDLE_EXIT_SEC}s — closing")
             tmux("kill-window", "-t", v["win"])
             del running[key]
 
 
-log(f"watcher v6 avviato — interattivo in tmux, model={ARM_MODEL} effort={ARM_EFFORT} perm={ARM_PERM}")
+log(f"watcher started — interactive arms in tmux, model={ARM_MODEL} effort={ARM_EFFORT} perm={ARM_PERM}")
 ensure_tmux_session()
 adopt_existing_windows()
 
@@ -363,13 +368,13 @@ while True:
                 continue
             if "default" in key:
                 fail_tasks(key[0], key[1], ("pending",),
-                           "manca project/channel: nella chat brain chiama "
-                           "write_context('__brain__', 'project=X channel=Y') e reinvia il task")
+                           "missing project/channel: in the brain chat call "
+                           "write_context('__brain__', 'project=X channel=Y') and send the task again")
                 continue
             if key in running:
                 notify_new_tasks(key, c["pending"])
             else:
-                log(f"[NEW] {len(c['pending'])} task pending su {key[0]}:{key[1]}")
+                log(f"[NEW] {len(c['pending'])} pending task(s) on {key[0]}:{key[1]}")
                 launch_arm(key[0], key[1], c["pending"])
     except Exception as e:
         log(f"[ERR] {e}")

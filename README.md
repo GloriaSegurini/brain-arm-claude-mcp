@@ -22,6 +22,7 @@ closes it (DONE); a second channel joins; idle arms go quiet (○).*
 ## Contents
 
 - [Reading the status table and the logs](#reading-the-status-table-and-the-logs)
+- [How the brain waits for the arm](#how-the-brain-waits-for-the-arm)
 - [Why brain-arm](#why-brain-arm)
 - [How it compares to built-in features](#how-it-compares-to-built-in-features)
 - [Architecture](#architecture)
@@ -58,7 +59,31 @@ The table refreshes every 3 seconds (`watch -n3 python3 status.py`; the watcher 
 | An arm, history | `logs/<project>--<channel>.log` | Raw copy of the arm's screen (contains terminal escape codes). `tail -f` it to follow from another terminal. |
 | The watcher | `data/watcher.log` | One line per event: `[NEW]` task seen, `[ARM]` arm started/closed, `[NOTIFY]` new task passed to a running arm, `[NUDGE]` arm reminded to close a task, `[WAIT-USER]` arm waiting for your confirmation, `[IDLE]`/`[KILL]` arm closed by a limit, `[FAIL]` tasks failed by a safety rule. |
 
-> UI messages, prompts and tool descriptions are currently in Italian; the documentation is in English.
+---
+
+## How the brain waits for the arm
+
+![The brain waiting on wait_for_task while the arm works](docs/brain-wait-demo.gif)
+
+*Left: the brain chat. Right: the arm, at the same time. Made-up example.*
+
+**You don't have to tell the brain to wait, or tell it when the arm is done.** The waiting is built into the
+tools:
+
+1. `create_task` answers with the next step: *call `wait_for_task` now*.
+2. `wait_for_task` waits **inside the MCP server** for up to ~50 s per call (it re-reads the queue every 3 s).
+   While it waits, the model is not running, so no tokens are spent.
+3. If the task is still open it answers *"wait … in_progress for N min, call wait_for_task again now, without
+   writing to the user"* — and the brain calls it again.
+4. When the arm closes the task it answers *"done … now call get_result"*; the brain reads the result, checks
+   it and reports to you.
+5. If no arm picks the task up within 3 minutes, it tells the brain why (unmapped project, watcher down) so the
+   brain can tell you once instead of waiting in silence.
+
+The rules live in the tool descriptions and answers themselves, so they work in any chat that has the
+brain-arm connector. For extra robustness put [`docs/brain-instructions.md`](docs/brain-instructions.md) in your
+Claude Desktop project instructions once: it also fixes the chat's project and channel, so you never have to
+repeat them.
 
 ---
 
@@ -137,6 +162,11 @@ Some of these may replace parts of brain-arm over time (e.g. messaging instead o
 
 ## Architecture
 
+> **Interactive walkthrough:** [docs/architecture.html](https://gloriasegurini.github.io/brain-arm-claude-mcp/architecture.html)
+> — click any component to see what it is, or step through the life of a task.
+> (GitHub can't run scripts inside a README; the page is served by GitHub Pages. Locally, open
+> `docs/architecture.html` in a browser.)
+
 ```mermaid
 flowchart LR
   subgraph WIN["Windows"]
@@ -177,32 +207,69 @@ WSL2
 └─ everyone reads/writes data/*.json through store.py (inter-process lock + atomic writes)
 ```
 
-**Life of a task**
+**Life of a task — click a step to expand it**
 
-```mermaid
-sequenceDiagram
-  participant U as You
-  participant B as Brain (Claude Desktop)
-  participant S as MCP server
-  participant Q as tasks.json
-  participant W as Watcher
-  participant A as Arm (Claude Code)
-  U->>B: discuss, decide
-  B->>S: create_task(project, channel, …)
-  S->>Q: append task (pending)
-  loop every ≤50 s until closed
-    B->>S: wait_for_task(id)
-    S-->>B: "wait … call again" / final status
-  end
-  W->>Q: sees pending task for channel
-  W->>A: open tmux window, start Claude Code (or notify the running arm)
-  A->>Q: arm_helper get / start (in_progress)
-  A->>A: work in the repository (auto mode)
-  A->>Q: arm_helper done/fail + result
-  S-->>B: done
-  B->>S: get_result(id)
-  B->>U: verified outcome
-```
+<details><summary><b>1. Decide with the brain</b> · Brain</summary>
+
+You discuss the change in the Claude Desktop chat. When there's something to do, the brain writes a precise
+task: goal, constraints, files, and how to tell it worked.
+</details>
+
+<details><summary><b>2. <code>create_task</code></b> · Brain → MCP server → queue</summary>
+
+The brain calls `create_task(title, description, project, channel)`. The server refuses it if project or
+channel are missing or `default`; otherwise it appends the task to `tasks.json` as **pending** and answers
+*"NEXT STEP: call wait_for_task now"*.
+</details>
+
+<details><summary><b>3. The brain starts waiting</b> · Brain ↔ MCP server</summary>
+
+`wait_for_task` blocks **inside the server** for up to ~50 s, checking the queue every 3 s — no tokens are
+spent while it blocks. If the task isn't finished it answers *"wait … call again now"* and the brain calls it
+again: one short step every ~50 s. See [How the brain waits](#how-the-brain-waits-for-the-arm).
+</details>
+
+<details><summary><b>4. The watcher sees the task</b> · queue → watcher</summary>
+
+Within 5 s the watcher (plain Python, no model) reads the pending task. The status table shows it in `PEND`.
+</details>
+
+<details><summary><b>5. An arm starts, or is notified</b> · watcher → arm</summary>
+
+If the channel has no arm, the watcher opens a tmux window and starts Claude Code in the mapped folder with the
+arm prompt. If an arm is already open and idle, it types *"new tasks: start again from get"* into it — unless a
+confirmation dialog is open, in which case it waits.
+</details>
+
+<details><summary><b>6. The arm takes the task</b> · arm → queue</summary>
+
+`arm_helper.py get`, then `start`: the task becomes **in_progress** (`RUN`) and the dot turns ●.
+</details>
+
+<details><summary><b>7. The arm works</b> · arm → repository</summary>
+
+It reads, edits and tests in the repository. Every action goes through Claude Code's permissions and the
+auto-mode classifier.
+</details>
+
+<details><summary><b>8. The arm closes the task</b> · arm → queue</summary>
+
+`arm_helper.py done` (or `fail`) with the result — long results via stdin. Then it writes *"ARM waiting"* and
+stops; an idle arm costs nothing. If it forgets to close the task, the watcher reminds it.
+</details>
+
+<details><summary><b>9. The brain reports</b> · MCP server → brain → you</summary>
+
+`wait_for_task` answers **done**; the brain calls `get_result`, checks the outcome against the goal and
+reports to you. You never had to say "it's done".
+</details>
+
+<details><summary><b>10. Housekeeping</b> · watcher</summary>
+
+An arm idle for 1 h is closed; one working 60 min without a pause, or stuck at startup for 10 min, is closed and
+its tasks fail; at most 5 arms run at once (all configurable).
+</details>
+
 
 **Brain tools** (MCP): `set_mode`, `get_mode`, `create_task` (project and channel are mandatory),
 `wait_for_task`, `get_result`, `check_updates`, `list_channels`, `get_tasks`, `update_task`,
@@ -287,7 +354,7 @@ Code installation. Long results are piped through stdin (`… | arm_helper.py do
   | `./stop-arms.sh --pending` | Kill running arms and fail pending tasks; watcher and tmux stay up. |
   | `./stop-arms.sh <project> <channel>` | Stop one channel's arm and fail its pending tasks. |
 
-- **Verify nothing is running**: `pgrep -af "ARM del progetto"` (no output) and 0 pending / 0 in_progress
+- **Verify nothing is running**: `pgrep -af "ARM for project"` (no output) and 0 pending / 0 in_progress
   in the table.
 - **Measure**: `python3 measure.py` — arm tokens vs. what reached the brain, cache share, task outcomes.
 
@@ -353,7 +420,6 @@ Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored,
 - Delegation adds latency; for small changes a direct Claude Code session is faster.
 - Built and tested on Windows + WSL2 + Ubuntu; plain Linux/macOS should need little change but are untested.
 - The brain spends a little while waiting (one short step every ~50 s while a task runs).
-- Prompts and messages are in Italian for now.
 
 ---
 
@@ -372,6 +438,6 @@ automode_devtest.py  optional auto-mode rule for DEV/TEST environments
 measure.py           usage and outcome metrics
 systemd/             watcher service template
 examples/            projects map, local config, Claude Desktop config
-docs/                brain instructions, status GIF and its generator
+docs/                brain instructions, interactive architecture page, demo GIFs and their generators
 tests/               concurrency test, end-to-end brain/arm test
 ```

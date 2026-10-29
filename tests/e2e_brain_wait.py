@@ -1,11 +1,12 @@
 """End-to-end check of the brain side: talks to server.py over stdio (like Claude Desktop),
 creates a trivial task, waits with wait_for_task until an arm (launched by the real watcher)
-closes it, then reads the result. Requires the watcher running and the project/channel mapped.
+closes it, then reads the result. Requires the watcher running and the project/channel mapped
+to a folder that Claude Code already trusts.
 
-Usage: .venv/bin/python tests/e2e_brain_wait.py PROJECT CHANNEL
+Usage: .venv/bin/python tests/e2e_brain_wait.py PROJECT CHANNEL [--slow]
+       --slow makes the arm work ~75 s, so the wait-and-retry path is exercised.
 """
 import asyncio
-import json
 import sys
 import time
 from pathlib import Path
@@ -28,32 +29,32 @@ async def main(project: str, channel: str):
 
         rej = text(await s.call_tool("create_task", {
             "title": "x", "description": "x", "project": "default", "channel": channel}))
-        print("project=default ->", "RIFIUTATO" if rej.startswith("Task NON creato") else f"ACCETTATO (errore!) {rej}")
+        print("project=default ->", "REFUSED (ok)" if rej.startswith("Task NOT created") else f"ACCEPTED (bug!) {rej}")
 
         slow = "--slow" in sys.argv
-        work = ("Prima esegui: python3 -c \"import time; time.sleep(75)\" (simula un lavoro lungo). "
+        work = ("First run: python3 -c \"import time; time.sleep(75)\" (simulates a long job). "
                 if slow else "")
         created = text(await s.call_tool("create_task", {
-            "title": "selftest: rispondi ok" + (" (lento)" if slow else ""),
-            "description": "Test automatico di brain-arm. Non leggere né modificare file. " + work +
-                           "Poi chiudi il task con: arm_helper.py done TASK_ID \"ok\"",
+            "title": "selftest: answer ok" + (" (slow)" if slow else ""),
+            "description": "brain-arm automatic test. Do not read or modify any file. " + work +
+                           "Then close the task with: arm_helper.py done TASK_ID \"ok\"",
             "project": project, "channel": channel}))
         print(created)
-        task_id = created.split("Task creato: ")[1].split()[0]
+        task_id = created.split("Task created: ")[1].split()[0]
 
         t0 = time.time()
         calls = 0
         while True:
             calls += 1
             out = text(await s.call_tool("wait_for_task", {"task_id": task_id}))
-            print(f"[{time.time()-t0:5.0f}s] wait_for_task #{calls}: {out[:150]}")
+            print(f"[{time.time() - t0:5.0f}s] wait_for_task #{calls}: {out[:150]}")
             if not out.startswith("wait"):
                 break
             if time.time() - t0 > 900:
-                print("TIMEOUT del test (15 min)")
+                print("TEST TIMEOUT (15 min)")
                 return 1
         print("get_result:", text(await s.call_tool("get_result", {"task_id": task_id}))[:200])
-        print(f"totale {time.time()-t0:.0f}s, {calls} chiamate a wait_for_task")
+        print(f"total {time.time() - t0:.0f}s, {calls} call(s) to wait_for_task")
         return 0 if out.startswith("done") else 1
 
 

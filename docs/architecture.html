@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>brain-arm — how it works</title>
+<style>
+  :root { --bg:#fbfaf7; --fg:#222; --muted:#6b6a65; --line:#d8d6cf; --card:#fff;
+          --brain:#eeedfe; --brain-s:#534ab7; --infra:#f1efe8; --infra-s:#5f5e5a; --hi:#d97757; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1f1e1c; --fg:#ecebe8; --muted:#a3a19b; --line:#3d3c38; --card:#2a2926;
+            --brain:#3c3489; --brain-s:#afa9ec; --infra:#444441; --infra-s:#b4b2a9; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  svg { width: 100%; height: auto; display: block; }
+  .node rect { stroke-width: 1; cursor: pointer; transition: opacity .2s, stroke-width .2s; }
+  .node text { pointer-events: none; }
+  .node.brain rect { fill: var(--brain); stroke: var(--brain-s); }
+  .node.infra rect { fill: var(--infra); stroke: var(--infra-s); }
+  .node .t { font: 600 15px system-ui, sans-serif; fill: var(--fg); }
+  .node .s { font: 12.5px ui-monospace, Menlo, Consolas, monospace; fill: var(--muted); }
+  .node.dim { opacity: .28; }
+  .node.sel rect { stroke: var(--hi); stroke-width: 2.5; }
+  .edge { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+  .zone { fill: none; stroke: var(--line); stroke-dasharray: 5 5; }
+  .zl { font: 12.5px system-ui, sans-serif; fill: var(--muted); }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; margin-top: 18px; min-height: 150px; }
+  .panel h2 { font-size: 18px; margin: 0 0 6px; }
+  .panel .k { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+  .panel p { margin: 6px 0; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  .nav { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .nav button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  .dots { display: flex; gap: 7px; flex: 1; justify-content: center; }
+  .dot { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: 12px; cursor: pointer; }
+  .dot.on { background: var(--hi); border-color: var(--hi); color: #fff; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>How brain-arm works</h1>
+  <p class="sub">Click a component to see what it is, or walk through the life of a task step by step.</p>
+
+  <svg viewBox="0 0 680 390" role="img" aria-label="brain-arm architecture">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5"/></marker></defs>
+    <text class="zl" x="300" y="58">Windows · Claude Desktop</text>
+    <rect class="zone" x="30" y="116" width="620" height="250" rx="16"/>
+    <text class="zl" x="46" y="136">WSL2 (Linux)</text>
+    <line class="edge" x1="150" y1="86" x2="150" y2="150" marker-end="url(#a)"/>
+    <line class="edge" x1="240" y1="180" x2="278" y2="180" marker-end="url(#a)"/>
+    <line class="edge" x1="440" y1="180" x2="478" y2="180" marker-end="url(#a)" marker-start="url(#a)"/>
+    <path class="edge" d="M300 210 L300 244 L170 244 L170 278" marker-end="url(#a)"/>
+    <line class="edge" x1="380" y1="278" x2="380" y2="212" marker-end="url(#a)" marker-start="url(#a)"/>
+    <line class="edge" x1="240" y1="308" x2="278" y2="308" marker-end="url(#a)"/>
+    <line class="edge" x1="440" y1="308" x2="478" y2="308" marker-end="url(#a)"/>
+    <g class="node brain" data-id="brain"><rect x="40" y="28" width="240" height="58" rx="8"/><text class="t" x="160" y="52" text-anchor="middle">Brain</text><text class="s" x="160" y="72" text-anchor="middle">Claude Desktop chat</text></g>
+    <g class="node infra" data-id="mcp"><rect x="60" y="152" width="180" height="58" rx="8"/><text class="t" x="150" y="176" text-anchor="middle">MCP server</text><text class="s" x="150" y="196" text-anchor="middle">server.py (stdio)</text></g>
+    <g class="node infra" data-id="queue"><rect x="280" y="152" width="160" height="58" rx="8"/><text class="t" x="360" y="176" text-anchor="middle">Task queue</text><text class="s" x="360" y="196" text-anchor="middle">data/tasks.json</text></g>
+    <g class="node infra" data-id="status"><rect x="480" y="152" width="150" height="58" rx="8"/><text class="t" x="555" y="176" text-anchor="middle">Status table</text><text class="s" x="555" y="196" text-anchor="middle">status.py</text></g>
+    <g class="node infra" data-id="watcher"><rect x="60" y="280" width="180" height="58" rx="8"/><text class="t" x="150" y="304" text-anchor="middle">Watcher</text><text class="s" x="150" y="324" text-anchor="middle">systemd, every 5 s</text></g>
+    <g class="node brain" data-id="arm"><rect x="280" y="280" width="160" height="58" rx="8"/><text class="t" x="360" y="304" text-anchor="middle">Arm</text><text class="s" x="360" y="324" text-anchor="middle">Claude Code in tmux</text></g>
+    <g class="node infra" data-id="repo"><rect x="480" y="280" width="150" height="58" rx="8"/><text class="t" x="555" y="304" text-anchor="middle">Repository</text><text class="s" x="555" y="324" text-anchor="middle">from projects map</text></g>
+  </svg>
+  <p class="hint">Purple = Claude at work (spends tokens). Gray = plain code and files (no tokens).</p>
+
+  <div class="panel" id="panel" aria-live="polite"></div>
+
+  <div class="nav">
+    <button id="prev">Previous</button>
+    <div class="dots" id="dots"></div>
+    <button id="next">Next</button>
+  </div>
+</main>
+<script>
+const COMP = {
+  brain:   ["Brain — Claude Desktop chat", "Model at work · tokens only while it answers",
+            "Where you think, discuss and decide. It never runs code: it can only act through the brain-arm tools (create_task, wait_for_task, get_result…). Its context holds decisions, task specs and results — not tool output."],
+  mcp:     ["MCP server — server.py", "Python, official mcp SDK, stdio transport · no tokens",
+            "Claude Desktop starts it as a child process (wsl … server.py) and talks to it over stdin/stdout. Each @server.tool() function is a tool the brain can call. wait_for_task waits inside this process, so waiting costs no tokens."],
+  queue:   ["Task queue — data/tasks.json", "JSON files + store.py lock · no tokens",
+            "The shared blackboard: components never talk directly, they all read and write here. store.py serializes writers with an inter-process lock and replaces files atomically, so no update is lost and no reader sees a half-written file."],
+  status:  ["Status table — status.py", "Plain Python · no tokens",
+            "Counts tasks per project and channel every 3 s (watch). ● = the channel's arm is working, ○ = idle or closed; PEND / RUN / DONE / FAIL columns."],
+  watcher: ["Watcher — watcher.py", "Plain Python, systemd user service · no tokens",
+            "Reads the queue every 5 s. Starts one arm per channel in a tmux window, passes new tasks to a running arm, reminds arms that forget to close a task, closes idle or stuck arms and enforces the limits. It never types into an open confirmation dialog."],
+  arm:     ["Arm — Claude Code in tmux", "Model at work · tokens only while it works",
+            "An interactive Claude Code session in the project folder, auto permission mode (Sonnet 5.5, medium effort by default). It takes tasks with arm_helper.py (get, start, done, fail), works, closes the task, writes “ARM waiting” and sits idle at its prompt — idle costs nothing."],
+  repo:    ["Project repository", "Your code · from ~/.brain-arm-projects.json",
+            "The folder mapped to the task's project (or project:channel). The arm reads, edits and tests here, within Claude Code's permissions and auto-mode rules."],
+};
+const STEPS = [
+  ["Decide with the brain", ["brain"], "You discuss the change in the Claude Desktop chat. When there's something to do, the brain writes a precise task: goal, constraints, files, how to tell it worked."],
+  ["create_task", ["brain","mcp","queue"], "The brain calls create_task(title, description, project, channel). The server rejects it if project/channel are missing, otherwise appends it to tasks.json as pending and tells the brain: call wait_for_task now."],
+  ["The brain starts waiting", ["brain","mcp"], "wait_for_task blocks inside the server for up to ~50 s, checking the queue every 3 s. No tokens are spent while it blocks. If the task isn't finished, it answers “wait … call again now” and the brain calls it again — one short step per ~50 s."],
+  ["The watcher sees the task", ["queue","watcher","status"], "Within 5 s the watcher reads the new pending task. The status table shows it in PEND. No model is involved."],
+  ["An arm starts (or is notified)", ["watcher","arm"], "If the channel has no arm, the watcher opens a tmux window and starts Claude Code in the mapped folder with the arm prompt. If an arm is already open and idle, it types “new tasks: start again from get” into it."],
+  ["The arm takes the task", ["arm","queue","status"], "arm_helper.py get, then start: the task becomes in_progress (RUN) and the dot turns ●."],
+  ["The arm works", ["arm","repo"], "It reads, edits and tests in the repository. Every action goes through Claude Code's permissions and the auto-mode classifier."],
+  ["The arm closes the task", ["arm","queue","status"], "arm_helper.py done (or fail) with the result — long results via stdin. Then it writes “ARM waiting” and stops: from here it costs nothing."],
+  ["The brain reports", ["brain","mcp","queue"], "wait_for_task now answers done; the brain calls get_result, checks the outcome against the goal and reports to you. You never had to say “it's done”."],
+  ["Housekeeping", ["watcher","arm"], "An arm idle for 1 h is closed; one working 60 min without pause or stuck at startup for 10 min is closed and its tasks fail; at most 5 arms run at once."],
+];
+const nodes = [...document.querySelectorAll(".node")];
+const panel = document.getElementById("panel");
+const dots = document.getElementById("dots");
+let i = 0;
+STEPS.forEach((_, n) => { const b = document.createElement("button"); b.className = "dot"; b.textContent = n + 1;
+  b.onclick = () => { i = n; showStep(); }; dots.appendChild(b); });
+function mark(ids, sel) { nodes.forEach(g => { g.classList.toggle("dim", !ids.includes(g.dataset.id)); g.classList.toggle("sel", g.dataset.id === sel); }); }
+function showStep() {
+  const [title, ids, text] = STEPS[i];
+  mark(ids, null);
+  panel.innerHTML = `<p class="k">Step ${i + 1} of ${STEPS.length}</p><h2>${title}</h2><p>${text}</p>`;
+  [...dots.children].forEach((d, n) => d.classList.toggle("on", n === i));
+}
+function showComp(id) {
+  const [title, kind, text] = COMP[id];
+  const involved = STEPS.map((s, n) => s[1].includes(id) ? n + 1 : null).filter(Boolean);
+  mark([id], id);
+  panel.innerHTML = `<h2>${title}</h2><p class="k">${kind}</p><p>${text}</p><p class="k">Involved in steps ${involved.join(", ")}</p>`;
+  [...dots.children].forEach((d, n) => d.classList.toggle("on", involved.includes(n + 1)));
+}
+nodes.forEach(g => g.addEventListener("click", () => showComp(g.dataset.id)));
+document.getElementById("prev").onclick = () => { i = (i - 1 + STEPS.length) % STEPS.length; showStep(); };
+document.getElementById("next").onclick = () => { i = (i + 1) % STEPS.length; showStep(); };
+showStep();
+</script>
+</body>
+</html>

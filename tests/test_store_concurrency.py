@@ -28,9 +28,9 @@ def main():
     d = read_json(path, {})
     expected = PROCS * ITERS
     ok = d["n"] == expected and len(d["ids"]) == expected
-    print(f"atteso {expected}, contatore {d['n']}, elementi {len(d['ids'])} -> {'OK' if ok else 'PERSE MODIFICHE'}")
+    print(f"expected {expected}, counter {d['n']}, items {len(d['ids'])} -> {'OK' if ok else 'UPDATES LOST'}")
     leftovers = [p.name for p in path.parent.iterdir() if p.suffix == ".tmp"]
-    print("file temporanei rimasti:", leftovers or "nessuno")
+    print("leftover temp files:", leftovers or "none")
     sys.exit(0 if ok and not leftovers else 1)
 
 

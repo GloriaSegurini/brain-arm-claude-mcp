@@ -53,9 +53,9 @@ def render(tasks: list, arm_state: dict, clock: str, tmux_session: str = "arms")
         out.append(f"  {proj:<18} {ch:<22}{dot} {pend} {run} {cnt['done']:>5} {fail}")
     out += [
         c("gray", "  " + "─" * 66),
-        c("gray", f"  totale: {len(tasks)} task in {len(channels)} canali"),
+        c("gray", f"  total: {len(tasks)} tasks in {len(channels)} channels"),
         "",
-        c("gray", f"  tmux: attach -t {tmux_session}  |  finestre: status  proj:channel ..."),
+        c("gray", f"  tmux: attach -t {tmux_session}  |  windows: status  project:channel ..."),
     ]
     return "\n".join(out)
 

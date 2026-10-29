@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Utilizzo:
-#   stop-arms.sh              → ferma TUTTO (arm + watcher) e pulisce pending
-#   stop-arms.sh PROJ CH      → ferma solo l'arm di quel canale
-#   stop-arms.sh --pending    → killa arm attivi + marca pending come failed (NO watcher, NO tmux)
+# Usage:
+#   stop-arms.sh              → stop EVERYTHING (watcher + arms), fail pending tasks, close tmux
+#   stop-arms.sh PROJ CH      → stop only that channel's arm and fail its pending tasks
+#   stop-arms.sh --pending    → kill running arms + fail pending tasks (watcher and tmux stay up)
 
-SESSION="arms"
 BASE="$(cd "$(dirname "$0")" && pwd)"
+SESSION="$(cd "$BASE" && python3 -c 'from config import CONFIG; print(CONFIG["tmux_session"])' 2>/dev/null || echo arms)"
+# Arm processes are recognised by the first words of their prompt (current and legacy wording).
+ARM_PATTERN='ARM (for project|del progetto)'
 
-# fail_pending [PROJ CH] — marca failed i task pending (tutti, o solo di un canale), con lock
+# fail_pending [PROJ CH] — fail pending tasks (all, or one channel's), under the shared lock
 fail_pending() {
     python3 - "$BASE" "$@" <<'EOF'
 import sys
@@ -22,57 +24,55 @@ with update_json(DATA_DIR / "tasks.json", []) as tasks:
         if t["status"] == "pending" and (proj is None or (
                 t.get("project", "default") == proj and t.get("channel", "default") == ch)):
             t["status"] = "failed"
-            t["result"] = "annullato manualmente con stop-arms.sh"
+            t["result"] = "cancelled manually with stop-arms.sh"
             t["updated_at"] = now
             changed += 1
-print(f"  {changed} task pending marcati come failed" + (f" per {proj}:{ch}." if proj else "."))
+print(f"  {changed} pending task(s) marked as failed" + (f" for {proj}:{ch}." if proj else "."))
 EOF
 }
-fail_pending_all() { fail_pending; }
-fail_pending_channel() { fail_pending "$1" "$2"; }
 
 if [ "$1" = "--pending" ]; then
-    echo "Killo arm in corso..."
-    pkill -f "ARM del progetto" 2>/dev/null && echo "  processi arm killati." || echo "  nessun arm trovato."
-    echo "Marco task pending come failed..."
-    fail_pending_all
-    echo "Fatto. (watcher e tmux restano attivi)"
+    echo "Killing running arms..."
+    pkill -f "$ARM_PATTERN" 2>/dev/null && echo "  arm processes killed." || echo "  no arm found."
+    echo "Failing pending tasks..."
+    fail_pending
+    echo "Done. (watcher and tmux are still running)"
 
 elif [ $# -eq 0 ]; then
-    echo "=== STOP TOTALE ==="
-    echo "1. Fermo il watcher..."
-    systemctl --user stop brain-arm-watcher.service 2>/dev/null && echo "  watcher fermato." || true
+    echo "=== FULL STOP ==="
+    echo "1. Stopping the watcher..."
+    systemctl --user stop brain-arm-watcher.service 2>/dev/null && echo "  watcher stopped." || true
     pkill -f watcher.py 2>/dev/null || true
 
-    echo "2. Killo tutti gli arm in corso..."
-    pkill -f "ARM del progetto" 2>/dev/null && echo "  processi arm killati." || echo "  nessun arm trovato."
+    echo "2. Killing every running arm..."
+    pkill -f "$ARM_PATTERN" 2>/dev/null && echo "  arm processes killed." || echo "  no arm found."
 
-    echo "3. Marco tutti i task pending come failed..."
-    fail_pending_all
+    echo "3. Failing all pending tasks..."
+    fail_pending
 
-    echo "4. Chiudo sessione tmux '$SESSION'..."
-    tmux kill-session -t "$SESSION" 2>/dev/null && echo "  tmux chiuso." || echo "  tmux non trovato."
+    echo "4. Closing tmux session '$SESSION'..."
+    tmux kill-session -t "$SESSION" 2>/dev/null && echo "  tmux closed." || echo "  tmux session not found."
 
-    echo "=== Tutto fermato. ==="
+    echo "=== Everything stopped. Restart with: systemctl --user start brain-arm-watcher ==="
 
 else
     PROJ="$1"
     CH="$2"
     if [ -z "$CH" ]; then
-        echo "Uso: stop-arms.sh PROGETTO CANALE"
+        echo "Usage: stop-arms.sh PROJECT CHANNEL"
         exit 1
     fi
     WNAME="${PROJ}:${CH}"
-    echo "Fermando arm $WNAME..."
-    pkill -f "ARM del progetto \"${PROJ}\", chat \"${CH}\"" 2>/dev/null || true
+    echo "Stopping arm $WNAME..."
+    pkill -f "\"${PROJ}\", chat \"${CH}\"" 2>/dev/null || true
     WID=$(tmux list-windows -t "$SESSION" -F '#{window_id} #{window_name}' 2>/dev/null | awk -v n="$WNAME" '$2==n{print $1}')
     if [ -n "$WID" ]; then
         for w in $WID; do tmux kill-window -t "$w"; done
-        echo "  finestra tmux $WNAME chiusa."
+        echo "  tmux window $WNAME closed."
     else
-        echo "  finestra $WNAME non trovata."
+        echo "  window $WNAME not found."
     fi
-    echo "Marcando task pending di $WNAME come failed..."
-    fail_pending_channel "$PROJ" "$CH"
-    echo "Fatto."
+    echo "Failing pending tasks of $WNAME..."
+    fail_pending "$PROJ" "$CH"
+    echo "Done."
 fi
