@@ -35,6 +35,7 @@ closes it (DONE); a second channel joins; idle arms go quiet (○).*
 - [Troubleshooting and maintenance](#troubleshooting-and-maintenance)
 - [Limitations](#limitations)
 - [Repository layout](#repository-layout)
+- [License](#license)
 
 ---
 
@@ -429,3 +430,10 @@ examples/            projects map, local config, Claude Desktop config
 docs/                brain instructions, interactive architecture page, demo GIFs and their generators
 tests/               concurrency test, end-to-end brain/arm test
 ```
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Gloria Segurini — free to use, modify and share, keeping the copyright notice.
+Provided as is, without warranty. brain-arm is an independent project, not affiliated with or endorsed by Anthropic.
