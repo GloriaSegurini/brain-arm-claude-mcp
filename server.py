@@ -249,12 +249,27 @@ def _minutes_since(iso: Optional[str]) -> int:
         return 0
 
 
+METRICS_FILE = DATA_DIR / "metrics.jsonl"
+
+
 @server.tool()
 async def wait_for_task(task_id: str) -> str:
     """[BRAIN] Wait for an ARM task to finish (up to about a minute per call; no tokens are spent while it waits).
     If it answers 'wait …', call it again IMMEDIATELY with the same task_id, without writing to the user
     and without asking them to tell you when it's done: waiting is this tool's job.
     When it answers 'done/failed/needs_clarification …', read the outcome with get_result(task_id)."""
+    started = _time.time()
+    answer = await _wait(task_id)
+    try:  # one line per call: lets measure.py count the brain's wait steps exactly
+        with METRICS_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": now(), "task": task_id, "answer": answer.split()[0],
+                                "waited_s": round(_time.time() - started)}) + "\n")
+    except OSError:
+        pass
+    return answer
+
+
+async def _wait(task_id: str) -> str:
     t = None
     deadline = _time.time() + WAIT_WINDOW_SEC
     while _time.time() < deadline:

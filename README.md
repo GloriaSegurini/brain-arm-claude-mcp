@@ -111,22 +111,62 @@ Everything that waits or polls is plain code reading a file.
 | Planning, writing the task, checking the result | brain | normal chat cost |
 
 **Arms don't poll.** An arm never checks the queue by itself: it is woken up by the watcher only when there is
-something to do, and between tasks it costs nothing.
+something to do.
 
-**What one brain "wait" step costs.** When `wait_for_task` answers *"wait"*, the brain makes one model call to
-call it again. That call re-reads the conversation — almost all of it from the prompt cache, which is billed at a
-fraction of normal input — and writes a few dozen tokens; each *"wait"* answer also adds ~60 tokens to the chat.
-Example: a 10-minute task costs the brain about **12 short steps**, each comparable to a one-line message in a
-long chat. The step cost grows with the length of the brain chat, so long-running brains benefit from starting a
-fresh chat per topic.
+**Idle really is zero — verified.** Across 43 real arm sessions, arms sat open and idle for a total of **15.7 hours**
+(longest single gap: 59 minutes) and made **0 model calls** that weren't triggered by an input (a task, a watcher
+notice or a tool result). So when the table shows **no `PEND` and no `RUN`**, the arms cost nothing. A brain chat
+costs nothing when it isn't answering or waiting on a task: chat apps call the model only to produce a reply.
+(Claude Code may still do non-model background traffic such as update checks; it uses no tokens.)
 
-**For scale** (`measure.py`, author's usage): a typical arm work session peaks at ~43k tokens of context with
-96–97% of input read from cache, while the brain sees ~1.4k tokens per task. The brain's waiting is small next
-to the arm's work, and the arm's work is what you would pay for in any single-session setup too.
+### Measured token profile
 
-**Tuning.** A longer `wait_window_sec` means fewer brain steps (300 s → 5× fewer), but a tool call that lasts
-too long may be cut off by the MCP client's own timeout. 50 s is a conservative default; raise it in
-`config.local.json` only after checking that your client tolerates it.
+Author's usage, 17–30 Oct 2026: 43 arm sessions, 115 tasks. Run `python3 measure.py` to get the same report on
+your own data. Arm figures are **exact** (from Claude Code's local transcripts); Claude Desktop doesn't expose token
+counts, so brain figures are **measured indirectly**. *Input-equivalent* weights the four token types with the
+usual price ratios relative to normal input — cache write 1.25×, cache read 0.1×, output 5× (check your model's
+pricing).
+
+| Arm | Value |
+|---|---|
+| Input read from the prompt cache | **96.8%** (uncached input ≈ 0%, cache writes 3.2%) |
+| Share of cost (input-equivalent) | cache reads 54% · cache writes 23% · output 24% |
+| Context when a fresh arm starts (system prompt, tools, project files, arm prompt) | median **28k** tokens |
+| Peak context per arm session | median **85k** · p90 182k |
+| **Cost per task** | median **136k** input-equivalent · p90 313k |
+| Context already loaded when a *later* task starts in the same open arm | median **90k** · p90 186k |
+
+| Brain | Value |
+|---|---|
+| Task spec it writes | median **850** tokens · p90 1.7k |
+| Result it reads back | median **980** tokens · p90 3.7k · max 6.6k |
+| Task duration (created → closed) | median **1.2 min** · p90 3.8 min |
+| `wait_for_task` calls per task | median **2** · p90 5 (estimated from durations; exact counts from now on in `data/metrics.jsonl`) |
+
+**What one brain wait step costs.** Each *"wait"* answer makes the brain re-read its conversation — almost all
+from cache — and write a few dozen tokens; the answer itself adds ~60 tokens to the chat. In input-equivalent
+terms a step is about `0.1 × brain context + ~400`: ≈4.5k for a 40k-token brain chat. With a median of 2 steps
+per task that is **~9k per task, versus ~136k for the arm doing the work**.
+
+### Where the tokens go — bottlenecks and what to do
+
+1. **Context carried between tasks (the biggest one).** An arm stays open after a task (`idle_exit_sec`, 1 h by
+   default) so the next task starts instantly — but it starts with everything the previous tasks loaded: median
+   **90k** tokens instead of **28k**, re-read at every step. *Mitigation:* set a short `idle_exit_sec` (e.g. `120`)
+   in `config.local.json`. Each task then gets a fresh arm: a one-off ~35k input-equivalent to start, a few seconds
+   of startup, and no memory of previous tasks (the brain's task description carries what's needed).
+   For follow-up tasks this should cut the arm's cost substantially; measure it on your own usage with
+   `measure.py`.
+2. **Arm startup (~28k).** Every new arm loads Claude Code's system prompt, tools and the project's `CLAUDE.md`.
+   *Mitigation:* keep project `CLAUDE.md` files short and to the point.
+3. **Arm output (24% of the cost).** Output tokens are the most expensive kind. *Mitigation:* ask for concise
+   results in the task description; long material belongs in files (e.g. `.arm_scratch/`), not in the result.
+4. **Results that pile up in the brain chat.** Every result stays in the brain's context (p90 3.7k tokens) and
+   every later brain step re-reads it. *Mitigation:* ask for short results; start a new brain chat per topic.
+5. **Brain wait steps.** Small (median 2 per task) but they grow with the brain chat's length. *Tuning:* a longer
+   `wait_window_sec` means fewer steps, with two limits: the MCP client may cut off a tool call that lasts too
+   long, and the prompt cache typically expires after ~5 minutes, so windows near or above that make each step
+   re-write the cache instead of reading it. 50 s is a deliberately conservative default.
 
 Whether you pay per token (API) or work within plan usage limits, the same proportions apply.
 
@@ -145,10 +185,10 @@ the context, push it toward compaction, and dilute earlier decisions. In brain-a
 the brain's context**: the brain only sees the task it wrote and the result it gets back. Each arm, in turn,
 starts fresh from a well-written task instead of inheriting a long, noisy history.
 
-Measured on the author's usage (`measure.py`, 61 real arm sessions): the median arm session peaked at
-**~43k tokens** of context (p90 ~136k), while the brain received **~1.4k tokens per task** (spec + result) —
-roughly **30× less** for a typical task. (An arm session may serve several tasks, so the per-task ratio is
-somewhat lower; the order of magnitude holds.)
+Measured on the author's usage (`measure.py`, 43 real arm sessions, 17–30 Oct 2026): the median arm session
+peaked at **~85k tokens** of context (p90 ~182k), while the brain received **~1.8k tokens per task** (spec +
+result) — roughly **45× less**. (An arm session may serve several tasks, so the per-task ratio is somewhat lower;
+the order of magnitude holds. Details in [Cost model](#cost-model).)
 
 ### 2. Separation of powers: structural, not prompt-based
 
@@ -162,7 +202,7 @@ surfaces as a failed task with the reason, instead of being worked around.
 
 The brain can use the strongest model with long-form reasoning; arms default to **Sonnet 5.5, medium effort**.
 Unlike a single-session setup that switches model by phase, each model here has **its own context**, and arms
-for different channels run **in parallel**. In the measured sessions **97% of arm input tokens were cache
+for different channels run **in parallel**. In the measured sessions **96.8% of arm input tokens were cache
 reads**, which are billed at a fraction of normal input tokens.
 
 ### 4. Robustness: state on disk, independent lifecycles
@@ -178,9 +218,9 @@ explicit permission rules, files, tmux and systemd/launchd. No inbound network p
 It adds cost guards, a full audit trail of delegated work, and explicit, narrow exceptions instead of blanket
 permissions.
 
-**Track record** (author's usage, Aug–Oct 2026): 706 tasks delegated, **639 done (90.5%)**, 17 where the arm
-asked for clarification instead of guessing, 50 failed — of which 23 during the initial build of the tool,
-18 permission/safety blocks surfaced as intended, and only 8 related to the task content.
+**Track record** (author's usage, Aug–Oct 2026): 758 tasks delegated, **689 done (90.9%)**, 17 where the arm
+asked for clarification instead of guessing, 52 failed — of which 25 during the initial build of the tool,
+20 permission/safety blocks surfaced as intended, 1 timeout, and only 6 related to the task content.
 
 ### When **not** to use it
 
