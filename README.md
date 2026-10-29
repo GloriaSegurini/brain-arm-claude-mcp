@@ -12,7 +12,7 @@ in parallel, visibly, and within cost and safety limits.
 - Every chat has its own queue (*project + channel*), so several brains and arms work side by side without
   mixing. You see everything live in a terminal dashboard and in tmux.
 
-![brain-arm status table](docs/status-demo.gif)
+<img src="docs/status-demo.gif" width="793" alt="brain-arm status table">
 
 *The status table (made-up projects). A task appears as pending, an arm starts (●), works on it (RUN),
 closes it (DONE); a second channel joins; idle arms go quiet (○).*
@@ -64,7 +64,7 @@ The table refreshes every 3 seconds (`watch -n3 python3 status.py`; the watcher 
 
 ## How the brain waits for the arm
 
-![The brain waiting on wait_for_task while the arm works](docs/brain-wait-demo.gif)
+<img src="docs/brain-wait-demo.gif" width="100%" alt="The brain waiting on wait_for_task while the arm works">
 
 *Left: the brain chat. Right: the arm, at the same time. Made-up example.*
 
@@ -203,7 +203,7 @@ Some of these may replace parts of brain-arm over time (e.g. messaging instead o
 
 ## Architecture
 
-![brain-arm architecture, step by step](docs/architecture-demo.gif)
+<img src="docs/architecture-demo.gif" width="920" alt="brain-arm architecture, step by step">
 
 *The life of a task, step by step: the highlighted components are the ones involved in each step.*
 

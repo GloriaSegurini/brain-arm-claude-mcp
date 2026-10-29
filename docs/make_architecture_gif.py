@@ -4,7 +4,7 @@ highlighting the components involved in each step. Requires Pillow. Run: python3
 """
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from gifkit import Draw, Font, new_image, save_gif
 
 ROOT = Path(__file__).resolve().parent.parent
 SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -17,12 +17,12 @@ BG, CARD, FG, MUTED, LINE, HI = (31, 30, 28), (42, 41, 38), (236, 235, 232), (16
 BRAIN, BRAIN_S = (60, 52, 137), (175, 169, 236)
 INFRA, INFRA_S = (68, 68, 65), (180, 178, 169)
 
-f_t = ImageFont.truetype(SANS_B, 18)
-f_s = ImageFont.truetype(MONO, 14)
-f_z = ImageFont.truetype(SANS, 15)
-f_h = ImageFont.truetype(SANS_B, 20)
-f_p = ImageFont.truetype(SANS, 16)
-f_k = ImageFont.truetype(SANS, 14)
+f_t = Font(SANS_B, 18)
+f_s = Font(MONO, 14)
+f_z = Font(SANS, 15)
+f_h = Font(SANS_B, 20)
+f_p = Font(SANS, 16)
+f_k = Font(SANS, 14)
 
 NODES = {  # id: (x, y, w, h, title, subtitle, is_claude)
     "brain":   (40, 28, 240, 58, "Brain", "Claude Desktop chat", True),
@@ -95,8 +95,8 @@ def wrap(text, font, width):
 
 def frame(n):
     title, active, text = STEPS[n]
-    img = Image.new("RGB", (W, H), BG)
-    d = ImageDraw.Draw(img)
+    img = new_image(W, H, BG)
+    d = Draw(img)
     d.text(p(300, 52), "Windows / Mac · Claude Desktop", font=f_z, fill=MUTED)
     x0, y0 = p(30, 116)
     x1, y1 = p(650, 366)
@@ -136,7 +136,7 @@ def frame(n):
 def main():
     images = [frame(n) for n in range(len(STEPS))]
     out = ROOT / "docs" / "architecture-demo.gif"
-    images[0].save(out, save_all=True, append_images=images[1:], duration=4200, loop=0, optimize=True)
+    save_gif(images, [4200] * len(images), out)
     print(f"written {out} ({len(images)} frames)")
 
 

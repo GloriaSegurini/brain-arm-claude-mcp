@@ -4,7 +4,7 @@ Made-up example, no real data. Requires Pillow. Run: python3 docs/make_brain_gif
 """
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from gifkit import Draw, Font, new_image, save_gif
 
 ROOT = Path(__file__).resolve().parent.parent
 SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -17,11 +17,11 @@ CHAT_BG, CHAT_FG, MUTED, BUBBLE = (38, 38, 36), (232, 230, 227), (154, 152, 147)
 CHIP_BG, CHIP_LINE, CLAY, OK = (46, 46, 43), (78, 77, 72), (217, 119, 87), (120, 190, 120)
 TERM_BG, TERM_FG, TERM_GREEN, TERM_GRAY, TERM_CYAN = (48, 10, 36), (238, 238, 236), (138, 226, 52), (136, 138, 133), (52, 226, 226)
 
-f_sans = ImageFont.truetype(SANS, 15)
-f_small = ImageFont.truetype(SANS, 13)
-f_bold = ImageFont.truetype(SANS_B, 15)
-f_mono = ImageFont.truetype(MONO, 14)
-f_mono_s = ImageFont.truetype(MONO, 13)
+f_sans = Font(SANS, 15)
+f_small = Font(SANS, 13)
+f_bold = Font(SANS_B, 15)
+f_mono = Font(MONO, 14)
+f_mono_s = Font(MONO, 13)
 
 TID = "task_042"
 
@@ -146,8 +146,8 @@ def render_arm(d, lines):
 
 
 def frame(items, arm, spin_phase):
-    img = Image.new("RGB", (W, H), CHAT_BG)
-    d = ImageDraw.Draw(img)
+    img = new_image(W, H, CHAT_BG)
+    d = Draw(img)
     render_chat(d, items, spin_phase)
     render_arm(d, arm)
     d.rectangle([0, H - 52, W, H], fill=(28, 28, 26))
@@ -175,7 +175,7 @@ def main():
             images.append(frame(items, arm, 0))
             durations.append(ms)
     out = ROOT / "docs" / "brain-wait-demo.gif"
-    images[0].save(out, save_all=True, append_images=images[1:], duration=durations, loop=0, optimize=True)
+    save_gif(images, durations, out)
     print(f"written {out} ({len(images)} frames)")
 
 

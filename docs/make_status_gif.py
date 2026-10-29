@@ -8,6 +8,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from gifkit import SCALE, save_gif
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from status import render  # noqa: E402
@@ -16,7 +18,7 @@ FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 BG, FG = (48, 10, 36), (238, 238, 236)
 ANSI = {"1": None, "32": (138, 226, 52), "33": (252, 233, 79), "31": (239, 41, 41),
         "36": (52, 226, 226), "90": (136, 138, 133)}
-SIZE, PAD = 17, 18
+SIZE, PAD = 17 * SCALE, 18 * SCALE
 
 
 def task(p, ch, status, n):
@@ -88,7 +90,7 @@ def main():
         images.append(draw(render(scene(ck, ing, rep), state, clock), header))
         durations.append(ms)
     out = ROOT / "docs" / "status-demo.gif"
-    images[0].save(out, save_all=True, append_images=images[1:], duration=durations, loop=0, optimize=True)
+    save_gif(images, durations, out)
     print(f"written {out} ({len(images)} frames)")
 
 
