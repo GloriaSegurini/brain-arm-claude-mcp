@@ -65,9 +65,11 @@ The table refreshes every 3 seconds (`watch -n3 python3 status.py`; the watcher 
 
 ## How the brain waits for the arm
 
-<img src="docs/brain-wait-demo.gif" width="100%" alt="The brain waiting on wait_for_task while the arm works">
+<img src="docs/brain-wait-demo.gif" width="880" alt="What you see in the brain chat while an arm works">
 
-*Left: the brain chat. Right: the arm, at the same time. Made-up example.*
+*What you actually see in the brain chat: your request, a few compact tool lines while the brain waits on its own,
+and a verified answer. The arm's noise — files read, diffs, test logs — stays in its own session, one
+`tmux attach -t arms` away if you want to look. Made-up example.*
 
 **You don't have to tell the brain to wait, or tell it when the arm is done.** The waiting is built into the
 tools:
