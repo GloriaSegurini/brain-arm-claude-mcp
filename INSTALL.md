@@ -5,12 +5,12 @@ don't skip any. It takes about **20–30 minutes**.
 
 ## What you are going to install
 
-| Piece | What it is | Why you need it |
-|---|---|---|
-| **Claude Desktop** | The Claude app you chat with | It is the **brain**: you plan the work with it |
-| **Claude Code** | Claude working inside your project folders | It is the **arm**: it does the work |
-| **brain-arm** | This tool | It connects the two and runs the arms for you |
-| A few small tools | Python, tmux, git, watch | brain-arm needs them to run |
+| Piece                    | What it is                                 | Why you need it                                      |
+| ------------------------ | ------------------------------------------ | ---------------------------------------------------- |
+| **Claude Desktop** | The Claude app you chat with               | It is the **brain**: you plan the work with it |
+| **Claude Code**    | Claude working inside your project folders | It is the **arm**: it does the work            |
+| **brain-arm**      | This tool                                  | It connects the two and runs the arms for you        |
+| A few small tools        | Python, tmux, git, watch                   | brain-arm needs them to run                          |
 
 ## How to read this guide
 
@@ -35,7 +35,7 @@ Every step looks like this:
 - I have a **Windows** PC → [Part A — Windows](#part-a--windows)
 - I have a **Mac** → [Part B — Mac](#part-b--mac)
 
-Then everyone continues with [Part C — Connect your first project](#part-c--connect-your-first-project).
+Then everyone continues with [Part C — Finish the setup by chatting](#part-c--finish-the-setup-by-chatting).
 
 > **Using VS Code?** Its built-in terminal works too: menu **Terminal → New Terminal**. On Windows, open the
 > folder through WSL (see A9) so the terminal is the Ubuntu one; on Mac it is the normal Mac terminal.
@@ -48,16 +48,19 @@ On Windows, brain-arm runs inside **WSL**, a small Linux system that Windows can
 it once; after that you'll use an app called **Ubuntu** as your terminal.
 
 ### A1. Check your Windows version
+
 - 👉 **Do:** press `Win+R`, type `winver`, press Enter.
 - ✅ **You should see:** Windows 11, or Windows 10 version 2004 or later.
 - ❌ **If not:** update Windows first (Settings → Windows Update).
 
 ### A2. Open PowerShell as administrator
+
 - 👉 **Do:** click **Start**, type `PowerShell`, then **right-click** "Windows PowerShell" →
   **Run as administrator** → click **Yes**.
 - ✅ **You should see:** a blue or black window whose title starts with "Administrator".
 
 ### A3. Install WSL with Ubuntu
+
 - 📋 **Copy** (into the administrator PowerShell):
   ```powershell
   wsl --install -d Ubuntu-24.04
@@ -68,6 +71,7 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
   `VERSION 2`, go to A4. If it mentions *virtualization*, ask your IT department to enable it.
 
 ### A4. Start Ubuntu for the first time
+
 - 👉 **Do:** click **Start**, type `Ubuntu`, open **Ubuntu 24.04**. The first start takes a few minutes.
 - 👉 **Do:** when asked, choose a **username** (lowercase, no spaces, e.g. `maria`) and a **password**.
   **Write the password down**: you'll need it during installation.
@@ -76,6 +80,7 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 > **From now on, unless a step says "PowerShell", every command goes in this Ubuntu window.**
 
 ### A5. Turn on automatic start (systemd)
+
 - 📋 **Copy:**
   ```bash
   printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf
@@ -94,6 +99,7 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 - ❌ **If not:** repeat A5 from the beginning; make sure you ran `wsl --shutdown`.
 
 ### A6. Install the small tools
+
 - 📋 **Copy:**
   ```bash
   sudo apt update && sudo apt install -y python3 python3-venv tmux git procps
@@ -102,6 +108,7 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 - ✅ **You should see:** it ends without red lines starting with `E:`.
 
 ### A7. Install Claude Code and sign in
+
 - 📋 **Copy:**
   ```bash
   curl -fsSL https://claude.ai/install.sh | bash
@@ -122,10 +129,12 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 - ❌ **If not:** `claude: command not found` → close and reopen Ubuntu and try again.
 
 ### A8. Install Claude Desktop (the Windows app)
+
 - 👉 **Do:** download Claude Desktop for Windows from **https://claude.ai/download**, install it and sign in.
 - ✅ **You should see:** the Claude app open, with a chat box.
 
 ### A9. Download brain-arm
+
 - 📋 **Copy** (in Ubuntu):
   ```bash
   git clone https://github.com/GloriaSegurini/brain-arm-claude-mcp.git ~/brain-arm
@@ -135,6 +144,7 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 - *(VS Code users: type `code .` here to open the folder in VS Code connected to Ubuntu.)*
 
 ### A10. Check your computer, then install brain-arm
+
 - 📋 **Copy:**
   ```bash
   ./install.sh --check
@@ -150,13 +160,14 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 - ✅ **You should see:** `[ok] watcher running (systemd)`, `[ok] brain-arm added to …` and `Installed. Next steps`.
 
 ### A11. Restart Claude Desktop
+
 - 👉 **Do:** at the bottom right of the screen, near the clock, click the **^** arrow, **right-click** the Claude
   icon → **Quit**. (Closing the window with X is not enough.) Then open Claude Desktop again.
 - ✅ **You should see:** in a chat, open the tools / connectors menu (the icon near the message box):
   **brain-arm** is listed and switched on.
 - ❌ **If not:** see [Common problems](#common-problems).
 
-➡️ Continue with [Part C](#part-c--connect-your-first-project).
+➡️ Continue with [Part C](#part-c--finish-the-setup-by-chatting).
 
 ---
 
@@ -165,11 +176,13 @@ it once; after that you'll use an app called **Ubuntu** as your terminal.
 On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 
 ### B1. Open Terminal
+
 - 👉 **Do:** press `Cmd+Space`, type `Terminal`, press Enter.
 - ✅ **You should see:** a window with a line ending in `%` and a blinking cursor.
 - *(VS Code: menu **Terminal → New Terminal** gives you the same thing.)*
 
 ### B2. Install Apple's developer tools
+
 - 📋 **Copy:**
   ```bash
   xcode-select --install
@@ -178,10 +191,12 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 - ❌ **If not:** if it says *"already installed"*, that's fine — go on.
 
 ### B3. Install Homebrew (a tool that installs other tools)
+
 - 👉 **Do:** first check if you already have it:
   ```bash
   brew --version
   ```
+
   If you see a version number, skip to B4.
 - 📋 **Copy:**
   ```bash
@@ -193,6 +208,7 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 - ✅ **You should see:** `brew --version` now prints a version number.
 
 ### B4. Install the small tools
+
 - 📋 **Copy:**
   ```bash
   brew install python tmux git watch
@@ -200,6 +216,7 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 - ✅ **You should see:** it ends without `Error:`. `python3 --version` shows 3.10 or newer.
 
 ### B5. Install Claude Code and sign in
+
 - 📋 **Copy:**
   ```bash
   curl -fsSL https://claude.ai/install.sh | bash
@@ -215,10 +232,12 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 - ✅ **You should see:** a version number from `claude --version`.
 
 ### B6. Install Claude Desktop (the Mac app)
+
 - 👉 **Do:** download Claude Desktop for Mac from **https://claude.ai/download**, open the downloaded file,
   drag **Claude** into **Applications**, open it and sign in.
 
 ### B7. Download brain-arm
+
 - 📋 **Copy:**
   ```bash
   git clone https://github.com/GloriaSegurini/brain-arm-claude-mcp.git ~/brain-arm
@@ -227,6 +246,7 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 - ✅ **You should see:** the line now contains `brain-arm`.
 
 ### B8. Check your Mac, then install brain-arm
+
 - 📋 **Copy:**
   ```bash
   ./install.sh --check
@@ -242,6 +262,7 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
   macOS may show a notification **"Background Items Added"**: that's brain-arm's watcher — allow it.
 
 ### B9. Restart Claude Desktop
+
 - 👉 **Do:** with Claude Desktop in front, press `Cmd+Q` (closing the window is not enough), then open it again.
 - ✅ **You should see:** in a chat, the tools / connectors menu lists **brain-arm**, switched on.
 
@@ -249,110 +270,115 @@ On a Mac everything runs directly on macOS; you'll use the **Terminal** app.
 
 ---
 
-## Part C — Connect your first project
+## Part C — Finish the setup by chatting
 
-Do this part in the **Ubuntu window** (Windows) or **Terminal** (Mac).
+From here on, **Claude does the rest**. You don't need the terminal anymore.
 
-### C1. Find your project folder
-A **project folder** is the folder that contains the code the arm will work on.
-- **Windows:** the folder should be **inside Ubuntu**, e.g. `~/code/webshop` (`~` means your home folder).
-  If your code is still in Windows (e.g. `C:\code\webshop`), the easiest way is to download it again inside
-  Ubuntu with `git clone …`. (Windows folders are reachable as `/mnt/c/...`, but slower.)
-- **Mac:** e.g. `~/code/webshop`. Tip: type the start of a command, then **drag the folder from Finder into
-  Terminal** to paste its full path.
+### C1. Ask Claude to set up brain-arm
 
-### C2. Tell brain-arm about it
-- 📋 **Copy** (replace the name and the folder with yours):
-  ```bash
-  cd ~/brain-arm
-  ./add-project.sh webshop ~/code/webshop
-  ```
-  `webshop` is the **project name** you'll use with the brain: lowercase, no spaces.
-- ✅ **You should see:** `[ok] webshop → /home/…/code/webshop`.
-- ❌ **If not:** `folder … does not exist` → check the path (C1).
+- 👉 **Do:** in Claude Desktop open a **new chat** and write:
+  *"Set up brain-arm."*
+- ✅ **You should see:** Claude checks your installation (tool `setup_check`) and tells you what is ready and
+  what is still missing.
+- ❌ **If Claude doesn't know what brain-arm is:** brain-arm is not connected. Go back to **A11 / B9**.
 
-### C3. Let Claude Code trust the folder (once per folder)
-- 📋 **Copy** (your folder):
-  ```bash
-  cd ~/code/webshop && claude
-  ```
-- 👉 **Do:** to the question **"Do you trust the files in this folder?"** choose **Yes**, then type `/exit`.
-- *(Why: otherwise every arm would stop on that question.)*
+### C2. Answer Claude's questions
 
-### C4. Tell the brain who it is
-- 👉 **Do:** in Claude Desktop create a **Project** (left sidebar → Projects → New project), e.g. "Webshop".
-- 👉 **Do:** open [`docs/brain-instructions.md`](docs/brain-instructions.md) (on GitHub, or in the terminal with
-  `cat ~/brain-arm/docs/brain-instructions.md`), copy the block between the two lines, and paste it into the
-  project's **instructions**.
-- 👉 **Do:** in the pasted text replace `<project>` with your project name (e.g. `webshop`) and `<channel>` with a
-  short name for this chat (e.g. `checkout-redesign`). **One chat = one channel.**
+Claude asks you **two things**:
 
-### C5. Test that everything is connected
-- 📋 **Copy** (uses an empty test folder, nothing of yours is touched):
-  ```bash
-  mkdir -p ~/brain-arm-sandbox && cd ~/brain-arm-sandbox && claude
-  ```
-  Choose **Yes** to trust the folder, then type `/exit`.
-  ```bash
-  cd ~/brain-arm && ./add-project.sh brain-arm:selftest ~/brain-arm-sandbox
-  .venv/bin/python tests/e2e_brain_wait.py brain-arm selftest
-  ```
-- ✅ **You should see,** within a minute: `wait_for_task #1: done …` and `get_result: ok`.
-- ❌ **If not:** see [Common problems](#common-problems).
+1. **Which folder contains your code.** Write the full path, for example:
+   - Windows: `C:\code\webshop`, or a folder inside Ubuntu such as `~/code/webshop` (faster);
+   - Mac: `~/code/webshop`. Tip: drag the folder from Finder into the chat box to paste its path.
+2. **A short name for the project**, e.g. `webshop` (lowercase, no spaces).
 
-### C6. Try it for real
-- 👉 **Do:** in a chat of your Claude Desktop project, write:
-  *"Delegate a read-only task: list the files in the project folder."*
-- ✅ **You should see:** the brain creates the task, waits **by itself** (you don't have to tell it anything) and
-  then reports the list of files.
+Claude then connects the project (tool `add_project`).
 
-### C7. Watch it work (optional, fun)
-- 📋 **Copy:**
-  ```bash
-  watch -n3 python3 ~/brain-arm/status.py
-  ```
-  The table of tasks updates every 3 seconds (`Ctrl+C` to close it).
-- 📋 **Copy:**
-  ```bash
-  tmux attach -t arms
-  ```
-  You see the arms working live. To leave without stopping anything press `Ctrl+b`, then `d`.
+### C3. Say yes (or no) to trusting the folder
+
+Claude Code works only in folders you **trust**. Trusting a folder lets the arms **read, write and run commands
+in it** without asking you each time.
+
+- 👉 Claude names the exact folder and asks you a **yes/no question**. It is not allowed to trust a folder
+  without your explicit "yes" (tool `trust_folder`).
+- ✅ **Yes:** Claude marks the folder as trusted. It also keeps a backup of Claude Code's settings
+  (`~/.claude.json.bak-brain-arm`).
+- **No:** nothing changes. You can trust it yourself later: `cd <folder> && claude`, answer **Yes**, type `/exit`.
+
+### C4. First test
+
+- 👉 Claude offers a first **read-only** task, e.g. listing the files in the project folder. Say yes.
+- ✅ **You should see:** Claude sends the task, **waits by itself** (you don't have to tell it anything) and reports
+  the list of files. 🎉 **Done.**
+
+### Every new chat
+
+Each chat works on one **project** and one **channel** (the chat's name, e.g. `checkout-redesign`). Claude
+proposes them at the start of the chat; just confirm. **One chat = one channel.**
+
+### Watch it work (optional, fun)
+
+In the Ubuntu window (Windows) or Terminal (Mac):
+
+- 📋 `watch -n3 python3 ~/brain-arm/status.py` — the table of tasks, updated every 3 seconds (`Ctrl+C` to close).
+- 📋 `tmux attach -t arms` — the arms working live. To leave without stopping anything press `Ctrl+b`, then `d`.
   (In VS Code's terminal `Ctrl+b` may be captured by VS Code: close the terminal tab instead.)
 
-🎉 **Done.** From now on just chat with your brain: brain-arm starts and stops the arms by itself.
+<details>
+<summary>Prefer the terminal? The same steps by hand</summary>
+
+```bash
+cd ~/brain-arm && ./add-project.sh webshop ~/code/webshop   # C2: connect the project
+cd ~/code/webshop && claude                                  # C3: answer Yes to the trust question, then /exit
+```
+
+If your Claude Desktop ignores the instructions sent by brain-arm (Claude doesn't propose project and channel,
+or doesn't wait for the arms by itself), paste the block from [`docs/brain-instructions.md`](docs/brain-instructions.md)
+into the instructions of a Claude Desktop **Project** (left sidebar → Projects → New project).
+
+End-to-end check without Claude Desktop (uses an empty test folder):
+
+```bash
+mkdir -p ~/brain-arm-sandbox && cd ~/brain-arm-sandbox && claude   # trust it, then /exit
+cd ~/brain-arm && ./add-project.sh brain-arm:selftest ~/brain-arm-sandbox
+.venv/bin/python tests/e2e_brain_wait.py brain-arm selftest           # expect "get_result: ok"
+```
+
+</details>
 
 ---
 
 ## Every day
 
-| I want to… | Command (in Ubuntu / Terminal) |
-|---|---|
-| add another project | `cd ~/brain-arm && ./add-project.sh <name> <folder>` (then C3 for that folder) |
-| see my projects | `cd ~/brain-arm && ./add-project.sh --list` |
-| see the tasks | `watch -n3 python3 ~/brain-arm/status.py` |
-| see the arms working | `tmux attach -t arms` |
-| stop everything now | `cd ~/brain-arm && ./stop-arms.sh` |
+| I want to…          | Command (in Ubuntu / Terminal)                                                   |
+| -------------------- | -------------------------------------------------------------------------------- |
+| add another project  | `cd ~/brain-arm && ./add-project.sh <name> <folder>` (or ask Claude: *"connect the project in &lt;folder&gt;"*) |
+| see my projects      | `cd ~/brain-arm && ./add-project.sh --list`                                    |
+| see the tasks        | `watch -n3 python3 ~/brain-arm/status.py`                                      |
+| see the arms working | `tmux attach -t arms`                                                          |
+| stop everything now  | `cd ~/brain-arm && ./stop-arms.sh`                                             |
 
 ## Common problems
 
-| What you see | What to do |
-|---|---|
-| `Permission denied` when running `./install.sh` | `cd ~/brain-arm && chmod +x *.sh` and try again. |
-| `[missing] systemd` (Windows) | Redo **A5**, including `wsl --shutdown` in PowerShell. |
-| `claude: command not found` | Close and reopen the terminal. |
-| brain-arm not listed in Claude Desktop | Quit Claude Desktop **completely** (A11 / B9) and reopen it. If still missing, run `./install.sh` again and answer `y`. |
-| Claude Desktop says the brain-arm configuration is not valid | Run `./install.sh` again and answer `y` (it rewrites the entry correctly; on Windows it must use `"command": "wsl"`), then restart Claude Desktop. |
-| Windows: `Wsl/Service/E_UNEXPECTED`, or brain-arm stops responding | In PowerShell: `wsl --shutdown`, open Ubuntu, restart Claude Desktop. |
-| A task stays in `PEND` | The project isn't mapped (`./add-project.sh --list`), the folder isn't trusted (C3), or the watcher is off (run `./install.sh` again). |
-| The arm keeps asking for permission | Update Claude Code: `claude update`. |
-| `pip install failed` | Internet or proxy problem: check your connection and try again. |
+| What you see                                                         | What to do                                                                                                                                               |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Permission denied` when running `./install.sh`                  | `cd ~/brain-arm && chmod +x *.sh` and try again.                                                                                                       |
+| `[missing] systemd` (Windows)                                      | Redo **A5**, including `wsl --shutdown` in PowerShell.                                                                                           |
+| `claude: command not found`                                        | Close and reopen the terminal.                                                                                                                           |
+| brain-arm not listed in Claude Desktop                               | Quit Claude Desktop **completely** (A11 / B9) and reopen it. If still missing, run `./install.sh` again and answer `y`.                        |
+| Claude Desktop says the brain-arm configuration is not valid         | Run `./install.sh` again and answer `y` (it rewrites the entry correctly; on Windows it must use `"command": "wsl"`), then restart Claude Desktop. |
+| Windows: `Wsl/Service/E_UNEXPECTED`, or brain-arm stops responding | In PowerShell: `wsl --shutdown`, open Ubuntu, restart Claude Desktop.                                                                                  |
+| A task stays in `PEND`                                             | Ask Claude: *"check the brain-arm setup"*. It runs `setup_check` and tells you what is missing (project not connected, folder not trusted, watcher off).               |
+| The arm keeps asking for permission                                  | Update Claude Code: `claude update`.                                                                                                                   |
+| `pip install failed`                                               | Internet or proxy problem: check your connection and try again.                                                                                          |
 
 ## Updating brain-arm
+
 ```bash
 cd ~/brain-arm && git pull && ./install.sh
 ```
 
 ## Uninstalling
+
 ```bash
 cd ~/brain-arm && ./stop-arms.sh
 # Windows (Ubuntu):
@@ -362,9 +388,11 @@ launchctl bootout gui/$(id -u)/com.brain-arm.watcher; rm ~/Library/LaunchAgents/
 # Both:
 rm -rf ~/brain-arm ~/.brain-arm-projects.json
 ```
+
 Then remove the `brain-arm` entry from Claude Desktop's configuration (Settings → Developer → Edit config) and
 restart Claude Desktop.
 
 ## Using Linux?
+
 The watcher and the arms work on Linux (`./install.sh` supports it, like on Windows/Ubuntu), but Claude Desktop —
 the brain — is officially available only for Windows and Mac, so on Linux you need another MCP client as the brain.

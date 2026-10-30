@@ -151,8 +151,7 @@ fi
 say "Installed. Next steps (details in INSTALL.md)"
 cat <<EOF
 1. Quit Claude Desktop completely (tray / menu bar icon → Quit) and open it again.
-2. Add your projects:      ./add-project.sh <project> <folder>
-3. Trust each folder once: cd <folder> && claude    → accept the trust prompt, then type /exit
-4. Paste docs/brain-instructions.md into your Claude Desktop project instructions.
-5. Watch it work:          watch -n3 python3 $BASE/status.py      and      tmux attach -t arms
+2. In a new Claude Desktop chat write:  Set up brain-arm
+   Claude checks the setup, asks for your project folder and, only with your yes, trusts it.
+3. Watch it work:          watch -n3 python3 $BASE/status.py      and      tmux attach -t arms
 EOF

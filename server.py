@@ -13,7 +13,8 @@ from typing import Literal, Optional
 
 from mcp.server import MCPServer
 
-from config import CONFIG
+import onboarding
+from config import BASE_DIR, CONFIG
 from store import DATA_DIR, locked, read_json as load, update_json, write_json
 
 WAIT_WINDOW_SEC = CONFIG["wait_window_sec"]
@@ -30,10 +31,49 @@ def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def brain_instructions() -> str:
+    """The block after the first '---' line of docs/brain-instructions.md (single source for docs and server)."""
+    text = (BASE_DIR / "docs" / "brain-instructions.md").read_text(encoding="utf-8")
+    return text.split("\n---\n", 1)[-1].strip()
+
+
 server = MCPServer(
     "brain-arm",
     description="Shared queue and context between the brain (Claude Desktop) and the arms (Claude Code)",
+    instructions=brain_instructions(),
 )
+
+
+# ── Setup ───────────────────────────────────────────────────────────────────
+
+@server.tool()
+def setup_check() -> str:
+    """Check that brain-arm is ready: Claude Code, tmux, watcher, connected projects and folder trust.
+    Call it when the user asks to set up brain-arm or when something does not work; then guide the user
+    through the TO DO items one at a time.
+    """
+    return onboarding.setup_check()
+
+
+@server.tool()
+def add_project(name: str, folder: str) -> str:
+    """Connect a project: map a short name to the folder with its code, so arms for that project work there.
+    'name': lowercase, e.g. "webshop" (or "webshop:checkout" to give one channel its own folder).
+    'folder': the folder the user gave you; Linux/Mac paths, ~ and Windows paths (C:\\code\\app) are accepted.
+    Ask the user for both; never guess a folder.
+    """
+    return onboarding.add_project(name, folder)
+
+
+@server.tool()
+def trust_folder(folder: str, user_confirmed: bool = False) -> str:
+    """Mark a connected project folder as trusted in Claude Code, so arms don't stop on the trust question.
+    Trusting lets arms read, write and run commands in that folder.
+    REQUIRES THE USER'S EXPLICIT CONSENT: first tell the user the exact folder and what trusting allows, ask a
+    direct yes/no question, and set user_confirmed=True only if the user answered yes for that exact folder
+    in this chat. Never assume or infer consent.
+    """
+    return onboarding.trust_folder(folder, user_confirmed)
 
 
 # ── Mode ────────────────────────────────────────────────────────────────────
@@ -115,8 +155,8 @@ def create_task(
     """
     if "default" in (project, channel) or not project.strip() or not channel.strip():
         return ("Task NOT created: project and channel must be this chat's ones, not 'default'. "
-                "If you don't know them, ask the user once and save them with "
-                "write_context('__brain__', 'project=X channel=Y').")
+                "If you don't know them, propose them to the user, ask for confirmation, then use them "
+                "for the whole chat. setup_check() lists the connected projects.")
     mode = load(MODE_FILE, {"mode": "brainstorm"})["mode"]
     if mode != "implement":
         return "Tasks are disabled in 'brainstorm' mode. Call set_mode('implement') first."

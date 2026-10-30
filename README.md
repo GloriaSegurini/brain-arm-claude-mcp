@@ -85,10 +85,10 @@ tools:
 5. If no arm picks the task up within 3 minutes, it tells the brain why (unmapped project, watcher down) so the
    brain can tell you once instead of waiting in silence.
 
-The rules live in the tool descriptions and answers themselves, so they work in any chat that has the
-brain-arm connector. For extra robustness put [`docs/brain-instructions.md`](docs/brain-instructions.md) in your
-Claude Desktop project instructions once: it also fixes the chat's project and channel, so you never have to
-repeat them.
+The rules reach the brain in two ways, so they work in any chat that has the brain-arm connector: the server
+sends [`docs/brain-instructions.md`](docs/brain-instructions.md) to the client at connection time (MCP server
+instructions), and the tool descriptions and answers repeat the essentials. Nothing needs to be pasted; if your
+client ignores server instructions, paste that file into a Claude Desktop project's instructions.
 
 ---
 
@@ -338,7 +338,8 @@ its tasks fail; at most 5 arms run at once (all configurable).
 
 **Brain tools** (MCP): `set_mode`, `get_mode`, `create_task` (project and channel are mandatory),
 `wait_for_task`, `get_result`, `check_updates`, `list_channels`, `get_tasks`, `update_task`,
-`write_context` / `read_context` / `clear_context`, `log` / `get_log`.
+`write_context` / `read_context` / `clear_context`, `log` / `get_log`; setup from the chat: `setup_check`,
+`add_project`, `trust_folder` (refuses unless the user explicitly confirmed, and only for connected folders).
 
 **Why arms don't use MCP:** depending on its configuration, the CLI may not load user MCP servers. Arms use
 `arm_helper.py`, a tiny command (`get`, `start`, `done`, `fail`, `write_context`) that works with any Claude
@@ -366,16 +367,20 @@ Code installation. Long results are piped through stdin (`… | arm_helper.py do
 👉 **Follow the step-by-step guide: [INSTALL.md](INSTALL.md)** — separate paths for **Windows** and **Mac**,
 written for people who have never used a terminal (about 20 minutes).
 
+After the install script, the setup finishes **in the chat**: write *"Set up brain-arm"* and the brain checks
+the installation (`setup_check`), connects your project folder (`add_project`) and, **only after your explicit
+yes for that exact folder**, marks it as trusted in Claude Code (`trust_folder`).
+
 ---
 
 ## Daily use
 
-- **New brain chat**: give it the instructions from `docs/brain-instructions.md` with its project and
-  channel; it calls `set_mode("implement")` and saves its identity at the start of each session.
+- **New brain chat**: the brain proposes the chat's project and channel and you confirm; one chat = one
+  channel. It calls `set_mode("implement")` before the first task.
 - **Watch**: `watch -n3 python3 ~/brain-arm/status.py`; live arms with `tmux attach -t arms`.
 - **An arm's history**: `tail -f ~/brain-arm/logs/<project>--<channel>.log` (how to read table and logs:
   [Reading the status table and the logs](#reading-the-status-table-and-the-logs)).
-- **Add a project**: `./add-project.sh <project>[:<channel>] <folder>`; list them with `./add-project.sh --list`.
+- **Add a project**: ask the brain (*"connect the project in ~/code/shop"*), or `./add-project.sh <project>[:<channel>] <folder>`; list them with `./add-project.sh --list`.
 - **Stop**:
 
   | Command | Effect |
@@ -438,7 +443,8 @@ Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored,
 | Arms keep asking for approvals | Auto mode is unavailable in old Claude Code versions (`auto mode unavailable` at startup). Update: `sudo npm i -g @anthropic-ai/claude-code@latest`. If Claude Code is installed in a root-owned prefix its self-update can't write there — update it periodically by hand. |
 | A task stays `pending` with ○ | Project/channel not in the projects map, watcher stopped (`systemctl --user status brain-arm-watcher`), or the arm is stuck on the folder-trust prompt (trust the folder once). `wait_for_task` reports this after 3 minutes. |
 | Claude Desktop: "not a valid MCP server configuration" | Use the `command: "wsl"` form, not `url`. Quit Desktop from the tray after editing the config. |
-| `create_task` refused | project/channel missing or `default`: set the chat identity (see `docs/brain-instructions.md`). |
+| `create_task` refused | project/channel missing or `default`: confirm the chat's project and channel with the brain. |
+| Not sure what is missing | Ask the brain to run `setup_check`: it reports Claude Code, tmux, watcher, projects and folder trust. |
 | Task blocked by the auto-mode classifier | Working as intended. Run the step yourself, or add a narrow rule (see `automode_devtest.py`). Don't route around it. |
 | Restarting the watcher | `systemctl --user restart brain-arm-watcher` — running arms are kept and re-adopted. |
 
@@ -457,6 +463,7 @@ Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored,
 
 ```
 server.py            MCP server for the brain (stdio)
+onboarding.py        setup from the chat: setup_check, add_project, trust_folder
 watcher.py           launches/notifies/nudges/closes arms in tmux; enforces limits
 arm_helper.py        the arms' interface to the queue
 store.py             inter-process lock + atomic JSON writes
@@ -472,7 +479,7 @@ measure.py           usage and outcome metrics
 systemd/             watcher service template
 examples/            projects map, local config, Claude Desktop config
 docs/                brain instructions, interactive architecture page, demo GIFs and their generators
-tests/               concurrency test, end-to-end brain/arm test
+tests/               concurrency, onboarding, server-instructions and end-to-end brain/arm tests
 ```
 
 ---
