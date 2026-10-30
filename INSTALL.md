@@ -282,6 +282,19 @@ From here on, **Claude does the rest**. You don't need the terminal anymore.
   what is still missing.
 - ❌ **If Claude doesn't know what brain-arm is:** brain-arm is not connected. Go back to **A11 / B9**.
 
+> 🔐 **About the "Claude wants to use … from brain-arm" pop-ups.** The first time Claude uses a brain-arm
+> tool, Claude Desktop asks for your approval. What to choose:
+>
+> | Tool | What it does | Choose |
+> | --- | --- | --- |
+> | **Setup check** (`setup_check`) | Only reads: checks Claude Code, tmux, the watcher, your projects | **Allow always** |
+> | **Add project** (`add_project`) | Adds one line to brain-arm's list of projects | **Allow always** |
+> | **Trust folder** (`trust_folder`) | Lets the arms read, write and run commands in a folder | **Allow once**, every time |
+>
+> With *Allow once* on **Trust folder** you get two independent safety checks: your "yes" in the chat **and**
+> your click on the pop-up. Even if Claude misread an answer, no folder becomes trusted without your click.
+> If you click **Deny**, nothing changes.
+
 ### C2. Answer Claude's questions
 
 Claude asks you **two things**:
@@ -299,7 +312,8 @@ Claude Code works only in folders you **trust**. Trusting a folder lets the arms
 in it** without asking you each time.
 
 - 👉 Claude names the exact folder and asks you a **yes/no question**. It is not allowed to trust a folder
-  without your explicit "yes" (tool `trust_folder`).
+  without your explicit "yes" (tool `trust_folder`). Then Claude Desktop shows the approval pop-up: choose
+  **Allow once** (see the table in C1).
 - ✅ **Yes:** Claude marks the folder as trusted. It also keeps a backup of Claude Code's settings
   (`~/.claude.json.bak-brain-arm`).
 - **No:** nothing changes. You can trust it yourself later: `cd <folder> && claude`, answer **Yes**, type `/exit`.
