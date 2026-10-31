@@ -49,7 +49,16 @@ def new_image(w, h, color):
 
 
 def save_gif(images, durations, out):
-    frames = [im.convert("P", palette=Image.Palette.ADAPTIVE, colors=256, dither=Image.Dither.NONE)
-              for im in images]
+    # GIF has one logical screen size. Pad variable-height scenes (the status
+    # table gains rows as channels appear) so later frames are not cropped to
+    # the first frame's smaller dimensions by some encoders/viewers.
+    width = max(im.width for im in images)
+    height = max(im.height for im in images)
+    frames = []
+    for im in images:
+        canvas = Image.new("RGB", (width, height), im.convert("RGB").getpixel((0, 0)))
+        canvas.paste(im.convert("RGB"), (0, 0))
+        frames.append(canvas.convert("P", palette=Image.Palette.ADAPTIVE,
+                                     colors=256, dither=Image.Dither.NONE))
     frames[0].save(out, save_all=True, append_images=frames[1:], duration=durations, loop=0,
                    optimize=False, disposal=1)

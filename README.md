@@ -12,10 +12,19 @@ in parallel, visibly, and within cost and safety limits.
 - Every chat has its own queue (*project + channel*), so several brains and arms work side by side without
   mixing. You see everything live in a terminal dashboard and in tmux.
 
-<img src="docs/status-demo.gif" width="793" alt="brain-arm status table">
+<img src="docs/status-demo.gif" width="793" alt="The task table updates as an arm starts, works and finishes">
 
 *The status table (made-up projects). A task appears as pending, an arm starts (●), works on it (RUN),
 closes it (DONE); a second channel joins; idle arms go quiet (○).*
+
+<details>
+<summary>How to read the status table</summary>
+
+`PEND` is waiting for an arm, `RUN` is being worked on, `DONE` is complete and `FAIL` needs attention. The dot
+shows whether that channel's arm is active. The dashboard is optional; the brain can wait for the result without
+watching it.
+
+</details>
 
 ---
 
@@ -34,6 +43,7 @@ closes it (DONE); a second channel joins; idle arms go quiet (○).*
 - [Safety and cost controls](#safety-and-cost-controls)
 - [Troubleshooting and maintenance](#troubleshooting-and-maintenance)
 - [Limitations](#limitations)
+- [Feedback and contributions](#feedback-and-contributions)
 - [Repository layout](#repository-layout)
 - [License](#license)
 
@@ -65,12 +75,32 @@ The table refreshes every 3 seconds (`watch -n3 python3 status.py`; the watcher 
 
 ## How the brain waits for the arm
 
-<img src="docs/brain-wait-demo.gif" width="880" alt="What you see in the brain chat while an arm works">
+<img src="docs/brain-wait-demo.gif" width="880" alt="The brain calls wait_for_task and stays quiet while the arm's detailed work remains in tmux">
 
-*What you actually see in the brain chat: your request, a few compact tool lines while the brain waits on its own,
-and a verified answer. Everything else is there only when you ask for it: the **table view** to see where tasks
-stand (`watch -n3 python3 status.py`), or the arm's **live session** with every file read, diff and test log
-(`tmux attach -t arms`). Made-up example.*
+*Made-up example. The brain calls `wait_for_task` again as needed and writes no progress narration while the tool
+waits. The compact tool rows can be expanded in Claude Desktop; ARM file reads, commands, diffs and test output
+stay in tmux unless you choose to open that view.*
+
+<details>
+<summary>What appears in the Brain chat while it waits</summary>
+
+After sending a task, the Brain calls `wait_for_task(task_id)`. That call waits inside the MCP server for about
+50 seconds. If the ARM is still working, the Brain calls it again. The chat does not fill with progress narration
+or copied terminal output; you see the compact tool activity and, when the task closes, the Brain's checked
+summary. The Brain may still speak once if a task has not been picked up after three minutes, to explain the
+likely cause.
+
+</details>
+
+<details>
+<summary>What you can inspect in tmux</summary>
+
+Run `tmux attach -t arms` and open the `project:channel` window to see the ARM session: files it reads, commands,
+diffs, test output and any confirmation prompt. This is optional; the Brain can finish the wait and report the
+result without you opening tmux. The table view (`watch -n3 python3 status.py`) is another optional way to see
+task status without reading the live session.
+
+</details>
 
 **You don't have to tell the brain to wait, or tell it when the arm is done.** The waiting is built into the
 tools:
@@ -79,7 +109,7 @@ tools:
 2. `wait_for_task` waits **inside the MCP server** for up to ~50 s per call (it re-reads the queue every 3 s).
    While it waits, the model is not running, so no tokens are spent.
 3. If the task is still open it answers *"wait … in_progress for N min, call wait_for_task again now, without
-   writing to the user"* — and the brain calls it again.
+   writing to the user"* — and the brain calls it again without adding progress narration to the chat.
 4. When the arm closes the task it answers *"done … now call get_result"*; the brain reads the result, checks
    it and reports to you.
 5. If no arm picks the task up within 3 minutes, it tells the brain why (unmapped project, watcher down) so the
@@ -180,10 +210,11 @@ explicit contract — the task — in between.
 
 ### 1. Reasoning quality: the brain's context stays clean
 
-In an agentic session most tokens are tool output: files read, test results, stack traces, diffs. They stay in
-the context, push it toward compaction, and dilute earlier decisions. In brain-arm that output **never enters
-the brain's context**: the brain only sees the task it wrote and the result it gets back. Each arm, in turn,
-starts fresh from a well-written task instead of inheriting a long, noisy history.
+In an agentic session most tokens can be tool output: files read, test results, stack traces, diffs. In
+brain-arm, the ARM's terminal stream stays in its own session and **does not enter the Brain's context**; the
+Brain sees the task it wrote and the result the ARM returns. Each project + channel has its own queue and ARM
+session, so different chats don't share that working history. While an ARM remains open, it can retain its own
+context across tasks in that channel; `idle_exit_sec` controls when it closes and the next task starts fresh.
 
 Measured on the author's usage (`measure.py`, 43 real arm sessions, 17–30 Oct 2026): the median arm session
 peaked at **~85k tokens** of context (p90 ~182k), while the brain received **~1.8k tokens per task** (spec +
@@ -194,16 +225,18 @@ the order of magnitude holds. Details in [Cost model](#cost-model).)
 
 In a single Claude Code session the planner and the executor are the same agent with the same tools; plan mode
 is a mode it can leave. Here the brain has **no shell and no repository access at all** — only the brain-arm
-tools you configured. Every hand-off is a written task: reviewable, logged, and verified by the brain when the
-result comes back. Arms run under Claude Code's permission system and auto mode; when something is blocked it
-surfaces as a failed task with the reason, instead of being worked around.
+tools you configured. Every hand-off is a written task: reviewable and logged. When the ARM returns a result,
+the Brain assesses its report against the original request; the coding session does not grade its own report.
+Arms run under Claude Code's permission system and auto mode; when something is blocked it surfaces as a failed
+task with the reason, instead of being worked around.
 
 ### 3. The right model for each role, with separate contexts
 
-The brain can use the strongest model with long-form reasoning; arms default to **Sonnet 5.5, medium effort**.
-Unlike a single-session setup that switches model by phase, each model here has **its own context**, and arms
-for different channels run **in parallel**. In the measured sessions **96.8% of arm input tokens were cache
-reads**, which are billed at a fraction of normal input tokens.
+The Brain model is selected in Claude Desktop; the ARM model is configured independently, defaulting to
+**Sonnet 5.5, medium effort**. You can use one model for implementation and another for planning and review.
+The Brain and each channel's ARM have separate contexts. Arms for different channels can run **in parallel**;
+an ARM's history stays with its channel and is never copied wholesale into the Brain chat. In the measured
+sessions **96.8% of arm input tokens were cache reads**, which are billed at a fraction of normal input tokens.
 
 ### 4. Robustness: state on disk, independent lifecycles
 
@@ -247,9 +280,10 @@ Some of these may replace parts of brain-arm over time (e.g. messaging instead o
 
 ## Architecture
 
-<img src="docs/architecture-demo.gif" width="920" alt="brain-arm architecture, step by step">
+<img src="docs/architecture-demo.gif" width="920" alt="Brain waits quietly through wait_for_task while the watcher routes work to an ARM in tmux">
 
-*The life of a task, step by step: the highlighted components are the ones involved in each step.*
+*The life of a task, step by step: the highlighted components are the ones involved in each step. The Brain's
+quiet wait and the optional tmux detail view are called out explicitly.*
 
 **Want to explore it yourself?** Open the [interactive architecture page](https://gloriasegurini.github.io/brain-arm-claude-mcp/architecture.html):
 click any component to see what it is, or move through the steps at your own pace.
@@ -272,7 +306,7 @@ WSL2
 └─ everyone reads/writes data/*.json through store.py (inter-process lock + atomic writes)
 ```
 
-**Life of a task — click a step to expand it**
+**Want the detail behind a frame? Click a step below to expand it.**
 
 <details><summary><b>1. Decide with the brain</b> · Brain</summary>
 
@@ -397,11 +431,17 @@ yes for that exact folder**, marks it as trusted in Claude Code (`trust_folder`)
 
 ## Configuration
 
-Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored, see
-`examples/config.local.example.json`).
+Defaults live in `config.py`; put overrides in `config.local.json` in the brain-arm repository root (git-ignored,
+see `examples/config.local.example.json`). The Brain and ARM model choices are independent:
+
+- **Brain:** choose the model in Claude Desktop's model picker. brain-arm does not set or override it.
+- **ARM:** set `arm_model` in the root `config.local.json`. For example, copy
+  `examples/config.local.example.json` to `config.local.json` (if you don't already have one) and edit the value.
+  This model is used when the watcher starts a new ARM; already-running ARM sessions keep their current model.
 
 | Key | Default | Meaning |
 |---|---|---|
+| Brain model | Selected in Claude Desktop | Model used for planning and reviewing the ARM's returned result; change it in Claude Desktop, not in brain-arm config. |
 | `arm_model` / `arm_effort` / `arm_permission_mode` | `claude-sonnet-5-5` / `medium` / `auto` | How arms are started. |
 | `max_concurrent` | 5 | Maximum arms at the same time. |
 | `idle_exit_sec` | 3600 | Close an arm after this long without tasks. |
@@ -456,6 +496,14 @@ Defaults live in `config.py`; put overrides in `config.local.json` (git-ignored,
 - Delegation adds latency; for small changes a direct Claude Code session is faster.
 - Built and tested on Windows + WSL2 + Ubuntu; plain Linux/macOS should need little change but are untested.
 - The brain spends a little while waiting (one short step every ~50 s while a task runs).
+
+---
+
+## Feedback and contributions
+
+If you try brain-arm, please share your feedback, suggestions, questions, or bug reports directly on
+[GitHub](https://github.com/GloriaSegurini/brain-arm-claude-mcp). Advice from people with different workflows
+and setups is especially welcome.
 
 ---
 

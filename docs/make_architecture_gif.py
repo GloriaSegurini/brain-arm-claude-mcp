@@ -13,7 +13,7 @@ MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
 S, OX, OY = 1.3, 20, 10          # scale and offset of the 680x390 layout
 W, H = 920, 700
-BG, CARD, FG, MUTED, LINE, HI = (31, 30, 28), (42, 41, 38), (236, 235, 232), (163, 161, 155), (70, 69, 64), (217, 119, 87)
+BG, CARD, FG, MUTED, LINE, HI = (38, 38, 36), (48, 47, 44), (236, 235, 232), (163, 161, 155), (78, 77, 72), (217, 119, 87)
 BRAIN, BRAIN_S = (60, 52, 137), (175, 169, 236)
 INFRA, INFRA_S = (68, 68, 65), (180, 178, 169)
 
@@ -21,7 +21,7 @@ f_t = Font(SANS_B, 18)
 f_s = Font(MONO, 14)
 f_z = Font(SANS, 15)
 f_h = Font(SANS_B, 20)
-f_p = Font(SANS, 16)
+f_p = Font(SANS, 17)
 f_k = Font(SANS, 14)
 
 NODES = {  # id: (x, y, w, h, title, subtitle, is_claude)
@@ -48,7 +48,7 @@ STEPS = [
     ("create_task", ["brain", "mcp", "queue"],
      "The brain calls create_task(project, channel, …). The server stores it in the queue as pending and tells the brain: call wait_for_task now."),
     ("The brain waits — for free", ["brain", "mcp"],
-     "wait_for_task waits inside the server for up to ~50 s (no tokens). If the task isn't done it answers \"wait, call again\" and the brain calls again."),
+     "The Brain calls wait_for_task and stays quiet while it waits. The server checks the queue without tokens; no ARM logs or progress messages enter the chat. Open tmux only when you want the details."),
     ("The watcher sees the task", ["queue", "watcher", "status"],
      "Within 5 s the watcher (plain Python, no tokens) reads the pending task. The status table shows it in PEND."),
     ("An arm starts", ["watcher", "arm"],
@@ -60,7 +60,7 @@ STEPS = [
     ("The arm closes the task", ["arm", "queue", "status"],
      "arm_helper.py done with the result. Then it writes \"ARM waiting\" and stops: an idle arm costs nothing."),
     ("The brain reports", ["brain", "mcp", "queue"],
-     "wait_for_task answers done; the brain reads the result with get_result, checks it and reports to you."),
+     "The Brain sees compact wait/tool status, then the final result. It checks the ARM's summary and reports back; the file reads, commands and test output stay in tmux."),
     ("Housekeeping", ["watcher", "arm"],
      "Idle arms close after 1 h; arms stuck or working too long are closed; at most 5 arms at once."),
 ]
@@ -70,7 +70,7 @@ def p(x, y):
     return OX + x * S, OY + y * S
 
 
-def mix(c, t=0.72):
+def mix(c, t=0.52):
     return tuple(int(a * (1 - t) + b * t) for a, b in zip(c, BG))
 
 
@@ -128,15 +128,17 @@ def frame(n):
     d.text((40, top + 14), f"Step {n + 1} of {len(STEPS)}", font=f_k, fill=MUTED)
     d.text((40, top + 36), title, font=f_h, fill=FG)
     for i, ln in enumerate(wrap(text, f_p, W - 90)):
-        d.text((40, top + 68 + 23 * i), ln, font=f_p, fill=FG)
-    d.text((W - 40, top + 14), "purple = Claude at work · gray = plain code, no tokens", font=f_k, fill=MUTED, anchor="ra")
+        d.text((40, top + 68 + 25 * i), ln, font=f_p, fill=FG)
+    d.text((W - 40, top + 14), "purple = Claude · gray = code · tool wait = no tokens", font=f_k, fill=MUTED, anchor="ra")
     return img
 
 
 def main():
     images = [frame(n) for n in range(len(STEPS))]
     out = ROOT / "docs" / "architecture-demo.gif"
-    save_gif(images, [4200] * len(images), out)
+    # Let readers follow the hand-off and pause on the key quiet-wait step.
+    durations = [5000, 5000, 6500, 5000, 5000, 5000, 5000, 5000, 6500, 5000]
+    save_gif(images, durations, out)
     print(f"written {out} ({len(images)} frames)")
 
 

@@ -96,13 +96,13 @@ const COMP = {
 const STEPS = [
   ["Decide with the brain", ["brain"], "You discuss the change in the Claude Desktop chat. When there's something to do, the brain writes a precise task: goal, constraints, files, how to tell it worked."],
   ["create_task", ["brain","mcp","queue"], "The brain calls create_task(title, description, project, channel). The server rejects it if project/channel are missing, otherwise appends it to tasks.json as pending and tells the brain: call wait_for_task now."],
-  ["The brain starts waiting", ["brain","mcp"], "wait_for_task blocks inside the server for up to ~50 s, checking the queue every 3 s. No tokens are spent while it blocks. If the task isn't finished, it answers “wait … call again now” and the brain calls it again — one short step per ~50 s."],
+  ["The brain waits quietly", ["brain","mcp"], "The Brain calls wait_for_task and adds no progress narration while the tool waits. The server checks the queue every 3 s for up to ~50 s, without tokens. ARM logs stay out of the chat; open tmux only when you want the detail."],
   ["The watcher sees the task", ["queue","watcher","status"], "Within 5 s the watcher reads the new pending task. The status table shows it in PEND. No model is involved."],
   ["An arm starts (or is notified)", ["watcher","arm"], "If the channel has no arm, the watcher opens a tmux window and starts Claude Code in the mapped folder with the arm prompt. If an arm is already open and idle, it types “new tasks: start again from get” into it."],
   ["The arm takes the task", ["arm","queue","status"], "arm_helper.py get, then start: the task becomes in_progress (RUN) and the dot turns ●."],
   ["The arm works", ["arm","repo"], "It reads, edits and tests in the repository. Every action goes through Claude Code's permissions and the auto-mode classifier."],
   ["The arm closes the task", ["arm","queue","status"], "arm_helper.py done (or fail) with the result — long results via stdin. Then it writes “ARM waiting” and stops: from here it costs nothing."],
-  ["The brain reports", ["brain","mcp","queue"], "wait_for_task now answers done; the brain calls get_result, checks the outcome against the goal and reports to you. You never had to say “it's done”."],
+  ["The brain reports", ["brain","mcp","queue"], "The Brain sees compact tool status, then calls get_result, checks the ARM's summary against the goal and reports back. File reads, commands and test output stay in tmux."],
   ["Housekeeping", ["watcher","arm"], "An arm idle for 1 h is closed; one working 60 min without pause or stuck at startup for 10 min is closed and its tasks fail; at most 5 arms run at once."],
 ];
 const nodes = [...document.querySelectorAll(".node")];

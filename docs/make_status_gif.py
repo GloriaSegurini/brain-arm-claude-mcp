@@ -15,9 +15,9 @@ sys.path.insert(0, str(ROOT))
 from status import render  # noqa: E402
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-BG, FG = (48, 10, 36), (238, 238, 236)
-ANSI = {"1": None, "32": (138, 226, 52), "33": (252, 233, 79), "31": (239, 41, 41),
-        "36": (52, 226, 226), "90": (136, 138, 133)}
+BG, FG = (38, 38, 36), (236, 234, 230)
+ANSI = {"1": None, "32": (125, 195, 125), "33": (230, 180, 90), "31": (230, 110, 100),
+        "36": (140, 185, 220), "90": (150, 148, 142)}
 SIZE, PAD = 17 * SCALE, 18 * SCALE
 
 
@@ -38,15 +38,15 @@ def scene(checkout, ingestion, reporting=None):
 
 W, I, R = ("webshop", "checkout-redesign"), ("data-platform", "ingestion"), ("data-platform", "reporting")
 FRAMES = [  # (clock, checkout counts, ingestion counts, reporting counts, arm state, duration ms)
-    ("10:14:03", (0, 0, 12, 0), (0, 0, 7, 1), None,         {W: False, I: False},           1600),
-    ("10:14:06", (1, 0, 12, 0), (0, 0, 7, 1), None,         {W: False, I: False},           1400),
-    ("10:14:09", (1, 0, 12, 0), (0, 0, 7, 1), None,         {W: True, I: False},            1200),
-    ("10:14:12", (0, 1, 12, 0), (0, 0, 7, 1), None,         {W: True, I: False},            1400),
-    ("10:14:15", (0, 1, 12, 0), (0, 0, 7, 1), (1, 0, 0, 0), {W: True, I: False},            1400),
-    ("10:14:18", (0, 1, 12, 0), (0, 0, 7, 1), (0, 1, 0, 0), {W: True, I: False, R: True},   1400),
-    ("10:14:21", (0, 0, 13, 0), (0, 0, 7, 1), (0, 1, 0, 0), {W: True, I: False, R: True},   1400),
-    ("10:14:24", (0, 0, 13, 0), (0, 0, 7, 1), (0, 0, 1, 0), {W: False, I: False, R: True},  1400),
-    ("10:14:27", (0, 0, 13, 0), (0, 0, 7, 1), (0, 0, 1, 0), {W: False, I: False, R: False}, 2600),
+    ("10:14:03", (0, 0, 12, 0), (0, 0, 7, 1), None,         {W: False, I: False},           2600),
+    ("10:14:06", (1, 0, 12, 0), (0, 0, 7, 1), None,         {W: False, I: False},           2600),
+    ("10:14:09", (1, 0, 12, 0), (0, 0, 7, 1), None,         {W: True, I: False},            2600),
+    ("10:14:12", (0, 1, 12, 0), (0, 0, 7, 1), None,         {W: True, I: False},            2800),
+    ("10:14:15", (0, 1, 12, 0), (0, 0, 7, 1), (1, 0, 0, 0), {W: True, I: False},            2800),
+    ("10:14:18", (0, 1, 12, 0), (0, 0, 7, 1), (0, 1, 0, 0), {W: True, I: False, R: True},   2800),
+    ("10:14:21", (0, 0, 13, 0), (0, 0, 7, 1), (0, 1, 0, 0), {W: True, I: False, R: True},   2800),
+    ("10:14:24", (0, 0, 13, 0), (0, 0, 7, 1), (0, 0, 1, 0), {W: False, I: False, R: True},  2800),
+    ("10:14:27", (0, 0, 13, 0), (0, 0, 7, 1), (0, 0, 1, 0), {W: False, I: False, R: False}, 3600),
 ]
 
 
