@@ -18,17 +18,17 @@ SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
-W, H = 880, 640
+W, H = 880, 676
 BG, FG, MUTED, BUBBLE = (27, 27, 26), (236, 234, 230), (150, 148, 142), (48, 48, 46)
 CARD, CARD_LINE, CODE_BG = (32, 32, 31), (60, 60, 57), (27, 27, 26)
 GREEN, GREEN_DIM, KEY = (125, 205, 125), (70, 120, 70), (150, 190, 230)
 TERM, TERM_FG = (36, 12, 30), (225, 225, 222)
 
-f_body = Font(SANS, 15)
-f_bold = Font(SANS_B, 15)
-f_row = Font(SANS, 14)
-f_small = Font(SANS, 12)
-f_mono = Font(MONO, 12.5)
+f_body = Font(SANS, 17)
+f_bold = Font(SANS_B, 17)
+f_row = Font(SANS, 16)
+f_small = Font(SANS, 13.5)
+f_mono = Font(MONO, 14)
 
 TASK_ID = "task_20261031_101203_042"
 USER = "Add input validation to the signup form and make sure the tests still pass."
@@ -88,10 +88,10 @@ def cursor(img, x, y):
 
 
 def header(d, label, secs, phase, y, open_=False, done=False):
-    dots(d, 150, y, phase, done)
-    d.text((182, y), label, font=f_row, fill=MUTED)
+    dots(d, 100, y, phase, done)
+    d.text((134, y), label, font=f_row, fill=MUTED)
     t = elapsed(secs)
-    x = 182 + f_row.getlength(label) + 8
+    x = 134 + f_row.getlength(label) + 8
     d.text((x, y), t, font=f_row, fill=MUTED)
     d.text((x + f_row.getlength(t) + 8, y + 1), "▾" if open_ else "▸", font=f_small, fill=MUTED)
     return y + 30
@@ -100,16 +100,16 @@ def header(d, label, secs, phase, y, open_=False, done=False):
 def base(intro=True):
     img = new_image(W, H, BG)
     d = Draw(img)
-    lines = wrap(USER, f_body, 420)
-    h = 24 * len(lines) + 20
-    d.rounded_rectangle([W - 40 - 450, 20, W - 40, 20 + h], 14, fill=BUBBLE)
+    lines = wrap(USER, f_body, 470)
+    h = 27 * len(lines) + 20
+    d.rounded_rectangle([W - 40 - 500, 20, W - 40, 20 + h], 14, fill=BUBBLE)
     for i, ln in enumerate(lines):
-        d.text((W - 40 - 432, 30 + 24 * i), ln, font=f_body, fill=FG)
+        d.text((W - 40 - 482, 30 + 27 * i), ln, font=f_body, fill=FG)
     y = 20 + h + 26
     if intro:
-        for ln in wrap(INTRO, f_body, W - 190):
-            d.text((150, y), ln, font=f_body, fill=FG)
-            y += 24
+        for ln in wrap(INTRO, f_body, W - 140):
+            d.text((100, y), ln, font=f_body, fill=FG)
+            y += 27
         y += 14
     return img, d, y
 
@@ -125,28 +125,28 @@ def collapsed(label, secs, phase, click=False):
 def expanded(secs, phase):
     img, d, y = base()
     y = header(d, "Wait for task", secs, phase, y, open_=True)
-    x0, x1 = 150, W - 40
-    d.rounded_rectangle([x0, y, x1, y + 425], 10, fill=CARD, outline=CARD_LINE)
+    x0, x1 = 100, W - 40
+    d.rounded_rectangle([x0, y, x1, y + 462], 10, fill=CARD, outline=CARD_LINE)
     yy = y + 14
     d.text((x0 + 16, yy), "Create task  ▾", font=f_row, fill=MUTED)
     yy += 28
     d.text((x0 + 16, yy), "Request", font=f_small, fill=MUTED)
     yy += 20
     d.text((x0 + 16, yy), "{", font=f_mono, fill=FG)
-    yy += 18
+    yy += 20
     for k, v in CREATE_REQ:
         d.text((x0 + 32, yy), k, font=f_mono, fill=KEY)
         kx = x0 + 32 + f_mono.getlength(k + ": ")
         d.text((x0 + 32 + f_mono.getlength(k), yy), ": ", font=f_mono, fill=FG)
         d.text((kx, yy), v + ",", font=f_mono, fill=GREEN)
-        yy += 18
+        yy += 20
     d.text((x0 + 16, yy), "}", font=f_mono, fill=FG)
     yy += 28
     d.text((x0 + 16, yy), "Response", font=f_small, fill=MUTED)
     yy += 20
     for ln in CREATE_RESP:
         d.text((x0 + 16, yy), ln, font=f_mono, fill=FG)
-        yy += 18
+        yy += 20
     yy += 12
     d.line([(x0, yy), (x1, yy)], fill=CARD_LINE)
     yy += 14
@@ -155,11 +155,11 @@ def expanded(secs, phase):
     d.text((x0 + 16, yy), "Request", font=f_small, fill=MUTED)
     yy += 20
     d.text((x0 + 16, yy), "{", font=f_mono, fill=FG)
-    d.text((x0 + 32, yy + 18), '"task_id"', font=f_mono, fill=KEY)
-    d.text((x0 + 32 + f_mono.getlength('"task_id"'), yy + 18), ": ", font=f_mono, fill=FG)
-    d.text((x0 + 32 + f_mono.getlength('"task_id": '), yy + 18), f'"{TASK_ID}"', font=f_mono, fill=GREEN)
-    d.text((x0 + 16, yy + 36), "}", font=f_mono, fill=FG)
-    cursor(img, 300, y + 300)
+    d.text((x0 + 32, yy + 20), '"task_id"', font=f_mono, fill=KEY)
+    d.text((x0 + 32 + f_mono.getlength('"task_id"'), yy + 20), ": ", font=f_mono, fill=FG)
+    d.text((x0 + 32 + f_mono.getlength('"task_id": '), yy + 20), f'"{TASK_ID}"', font=f_mono, fill=GREEN)
+    d.text((x0 + 16, yy + 40), "}", font=f_mono, fill=FG)
+    cursor(img, 260, y + 330)
     return img
 
 
@@ -172,7 +172,7 @@ def with_status(secs, phase):
     colors = dict(ANSI, **{"33": GREEN})  # running rows in green, as in the rest of this GIF
     view = render(scene((0, 1, 12, 0), (0, 0, 7, 1)),
                   {("webshop", "checkout-redesign"): True, ("data-platform", "ingestion"): False}, "10:12:53")
-    x0, y0, x1, y1 = 24, 300, W - 24, H - 40
+    x0, y0, x1, y1 = 24, 290, W - 24, H - 40
     d.rounded_rectangle([x0, y0, x1, y1], 10, fill=TERM, outline=(90, 55, 80), width=1.5)
     d.rounded_rectangle([x0, y0, x1, y0 + 30], 10, fill=(30, 30, 30))
     d.rectangle([x0, y0 + 20, x1, y0 + 30], fill=(30, 30, 30))
@@ -188,44 +188,44 @@ def with_status(secs, phase):
             elif part:
                 d.text((x, yy), part, font=f_mono, fill=color)
                 x += f_mono.getlength(part)
-        yy += 19
+        yy += 21
     return img
 
 
 def final():
     img, d, y = base()
-    dots(d, 150, y, 0, done=True)
-    d.text((182, y), "Thought for 1min 10s", font=f_row, fill=MUTED)
-    d.text((182 + f_row.getlength("Thought for 1min 10s") + 8, y + 1), "▸", font=f_small, fill=MUTED)
+    dots(d, 100, y, 0, done=True)
+    d.text((134, y), "Thought for 1min 10s", font=f_row, fill=MUTED)
+    d.text((134 + f_row.getlength("Thought for 1min 10s") + 8, y + 1), "▸", font=f_small, fill=MUTED)
     y += 38
     for kind, text in FINAL:
         if kind == "h":
             y += 6
-            d.text((150, y), text, font=f_bold, fill=FG)
+            d.text((100, y), text, font=f_bold, fill=FG)
             y += 28
             continue
-        indent = 172 if kind == "li" else 150
+        indent = 122 if kind == "li" else 100
         for i, ln in enumerate(wrap(text, f_body, W - 40 - indent)):
             if kind == "li" and i == 0:
-                d.text((156, y), "•", font=f_body, fill=FG)
+                d.text((106, y), "•", font=f_body, fill=FG)
             d.text((indent, y), ln, font=f_body, fill=FG)
-            y += 24
+            y += 27
         y += 6
     return img
 
 
 def main():
     frames = []  # (image, ms)
-    frames.append((base(intro=False)[0], 1800))
-    frames.append((base()[0], 1600))
-    frames += [(collapsed("Create task", 1, ph), 450) for ph in range(3)]
-    frames += [(collapsed("Wait for task", s, s), 500) for s in range(3, 15)]
-    frames.append((collapsed("Wait for task", 15, 0, click=True), 700))
-    frames += [(expanded(s, s), 650) for s in range(16, 26)]
-    frames += [(collapsed("Wait for task", s, s), 450) for s in range(26, 60, 2)]
-    frames += [(with_status(s, s), 600) for s in range(60, 70)]
-    frames += [(collapsed("Get result", s, s), 450) for s in range(70, 73)]
-    frames.append((final(), 6500))
+    frames.append((base(intro=False)[0], 1300))
+    frames.append((base()[0], 1100))
+    frames += [(collapsed("Create task", 1, ph), 300) for ph in range(3)]
+    frames += [(collapsed("Wait for task", s, s), 280) for s in range(3, 15, 2)]
+    frames.append((collapsed("Wait for task", 15, 0, click=True), 500))
+    frames += [(expanded(s, s), 500) for s in range(16, 26)]
+    frames += [(collapsed("Wait for task", s, s), 220) for s in range(26, 60, 4)]
+    frames += [(with_status(s, s), 450) for s in range(60, 70)]
+    frames += [(collapsed("Get result", s, s), 300) for s in range(70, 73)]
+    frames.append((final(), 5500))
     out = ROOT / "docs" / "brain-wait-demo.gif"
     save_gif([f for f, _ in frames], [ms for _, ms in frames], out)
     print(f"written {out} ({len(frames)} frames, {W * SCALE}x{H * SCALE})")
